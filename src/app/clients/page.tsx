@@ -1,9 +1,10 @@
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth';
 import { getLeads } from '@/app/actions/leads';
-import LeadsClient from './LeadsClient';
+import { getProjects } from '@/app/actions/units';
+import ClientManagementClient from './ClientManagementClient';
 
-export default async function LeadsPage() {
+export default async function ClientsPage() {
   const cookieStore = cookies();
   const token = cookieStore.get('auth_token')?.value;
   
@@ -13,7 +14,7 @@ export default async function LeadsPage() {
     try {
       const { payload } = await verifyToken(token);
       if (payload && typeof payload !== 'string') {
-        organizationId = (payload.app_metadata?.organization_id as string) || (payload.sub as string);
+        organizationId = ((payload as any).app_metadata?.organization_id as string) || (payload.sub as string);
       }
     } catch (e) {
       console.error('Token verification failed:', e);
@@ -21,6 +22,13 @@ export default async function LeadsPage() {
   }
 
   const leads = await getLeads(organizationId);
+  const projects = await getProjects(organizationId);
 
-  return <LeadsClient initialLeads={leads} organizationId={organizationId} />;
+  return (
+    <ClientManagementClient 
+      initialLeads={leads} 
+      projects={projects} 
+      organizationId={organizationId} 
+    />
+  );
 }

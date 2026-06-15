@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import styles from './Deals.module.css';
 import { updateDealStatus, updateDealMortgage,
   getDealClients,
@@ -12,7 +12,8 @@ import { updateDealStatus, updateDealMortgage,
   removeDealUnit,
   searchLeads,
   searchUnits } from '@/app/actions/deals';
-import { logCallAttempt } from '@/app/actions/leads';
+import { logCallAttempt, createClient } from '@/app/actions/leads';
+import LeadModal from '@/components/Leads/LeadModal';
 import { useRouter } from 'next/navigation';
 
 type StageType = 'normal' | 'group' | 'child';
@@ -21,13 +22,13 @@ type StageType = 'normal' | 'group' | 'child';
 const STAGES: { id: string; label: string; color: string; type: StageType; children?: string[] }[] = [
   { id: 'NEW_LEAD', label: 'Новый лид', color: '#6366f1', type: 'normal' },
   { id: 'CLARIFICATION', label: 'Уточнение', color: '#818cf8', type: 'normal' },
-  
+
   // Группа Звонок (одна колонка в Kanban, ТЗ 8.1.2)
   { id: 'CALL_GROUP', label: 'Звонок', color: '#3b82f6', type: 'group', children: ['CALL', 'SECOND_CALL', 'THIRD_CALL'] },
   { id: 'CALL', label: '1-й звонок', color: '#3b82f6', type: 'child' },
   { id: 'SECOND_CALL', label: 'Второй звонок', color: '#2563eb', type: 'child' },
   { id: 'THIRD_CALL', label: 'Третий звонок', color: '#1d4ed8', type: 'child' },
-  
+
   { id: 'CONSULTATION', label: 'Личная консультация', color: '#f59e0b', type: 'normal' },
   { id: 'PRE_RESERVATION', label: 'Бронирование (Soft)', color: '#fbbf24', type: 'normal' },
   { id: 'RESERVATION', label: 'Предв. бронирование (Hard)', color: '#f97316', type: 'normal' },
@@ -36,11 +37,101 @@ const STAGES: { id: string; label: string; color: string; type: StageType; child
   { id: 'CLIENT_CONFIRMATION', label: 'Подтверждено клиентом', color: '#059669', type: 'normal' },
   { id: 'WAITING_PAYMENT', label: 'Ожидание оплаты', color: '#ec4899', type: 'normal' },
   { id: 'PAYMENT_CONFIRMED', label: 'Оплата подтверждена', color: '#db2777', type: 'normal' },
-  
+
   { id: 'SUCCESS', label: 'Won (успешно)', color: '#15803d', type: 'normal' },
   { id: 'FAILED', label: 'Lost (отказ)', color: '#ef4444', type: 'normal' },
   { id: 'CANCELLED', label: 'Cancelled (расторжение)', color: '#64748b', type: 'normal' }
 ];
+
+// Порядковые номера статусов для проверки направления
+const STATUS_ORDER: Record<string, number> = {
+  NEW_LEAD: 0,
+  CLARIFICATION: 1,
+  CALL: 2,
+  SECOND_CALL: 3,
+  THIRD_CALL: 4,
+  CONSULTATION: 5,
+  PRE_RESERVATION: 6,
+  RESERVATION: 7,
+  CONTRACT_PREPARATION: 8,
+  CONTRACT: 9,
+  CLIENT_CONFIRMATION: 10,
+  WAITING_PAYMENT: 11,
+  PAYMENT_CONFIRMED: 12,
+  SUCCESS: 13,
+  FAILED: 98,
+  CANCELLED: 99,
+};
+
+// Финальные статусы — из них нельзя двигаться никуда
+const FINAL_STATUSES = ['SUCCESS', 'FAILED', 'CANCELLED'];
+
+// Статусы свободной зоны (до и включая звонки)
+const FREE_ZONE = ['NEW_LEAD', 'CLARIFICATION', 'CALL', 'SECOND_CALL', 'THIRD_CALL'];
+
+// Статусы строгой зоны (после Soft брони включительно)
+const STRICT_ZONE = ['PRE_RESERVATION', 'RESERVATION', 'CONTRACT_PREPARATION', 'CONTRACT', 'CLIENT_CONFIRMATION', 'WAITING_PAYMENT', 'PAYMENT_CONFIRMED'];
+
+function isTransitionAllowed(from: string, to: string): { allowed: boolean; reason?: string } {
+  // Из финальных статусов — никуда
+  if (FINAL_STATUSES.includes(from)) {
+    return { allowed: false, reason: `Сделка в финальном статусе "${from}" — движение заблокировано` };
+  }
+
+  // В Won — нельзя вручную, только автоматически
+  if (to === 'SUCCESS') {
+    return { allowed: false, reason: 'Статус Won присваивается автоматически после регистрации в NAPR' };
+  }
+
+  // В Lost и Cancelled — можно из любого статуса
+  if (to === 'FAILED' || to === 'CANCELLED') {
+    return { allowed: true };
+  }
+
+  // Внутри звонков — только вперёд
+  const callOrder: Record<string, number> = { CALL: 0, SECOND_CALL: 1, THIRD_CALL: 2 };
+  if (from in callOrder && to in callOrder) {
+    if (callOrder[to] !== callOrder[from] + 1) {
+      return { allowed: false, reason: 'Звонки идут строго по порядку: 1-й → 2-й → 3-й, перепрыгнуть нельзя' };
+    }
+    return { allowed: true };
+  }
+
+  // Из звонков (1-й и 2-й) можно на Личную консультацию
+  if ((from === 'CALL' || from === 'SECOND_CALL') && to === 'CONSULTATION') {
+    return { allowed: true };
+  }
+
+  // Из свободной зоны — на Личную консультацию и дальше (вперёд)
+  if (FREE_ZONE.includes(from)) {
+    const fromOrder = STATUS_ORDER[from] ?? 0;
+    const toOrder = STATUS_ORDER[to] ?? 0;
+    if (toOrder >= fromOrder) return { allowed: true };
+    // Назад в свободной зоне — разрешено
+    if (FREE_ZONE.includes(to)) return { allowed: true };
+    return { allowed: false, reason: 'Нельзя вернуться назад из свободной зоны в более ранний статус' };
+  }
+
+  // Из строгой зоны — на Личную консультацию разрешено (с сохранением предыдущего статуса)
+  if (STRICT_ZONE.includes(from) && to === 'CONSULTATION') {
+    return { allowed: true };
+  }
+
+  // В строгой зоне — только вперёд
+  if (STRICT_ZONE.includes(from) && STRICT_ZONE.includes(to)) {
+    const fromOrder = STATUS_ORDER[from] ?? 0;
+    const toOrder = STATUS_ORDER[to] ?? 0;
+    if (toOrder > fromOrder) return { allowed: true };
+    return { allowed: false, reason: 'После Soft-брони сделки можно двигать только вперёд' };
+  }
+
+  // Всё остальное — вперёд разрешено
+  const fromOrder = STATUS_ORDER[from] ?? 0;
+  const toOrder = STATUS_ORDER[to] ?? 0;
+  if (toOrder >= fromOrder) return { allowed: true };
+
+  return { allowed: false, reason: 'Этот переход не разрешён' };
+}
 
 interface DealsClientProps {
   initialDeals: any[];
@@ -51,8 +142,49 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
   const router = useRouter();
   const [deals, setDeals] = useState(initialDeals);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ CALL_GROUP: true });
+  const [draggingDealStatus, setDraggingDealStatus] = useState<string | null>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollAnimRef = useRef<number | null>(null);
+
+  const startAutoScroll = (clientX: number) => {
+    if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
+
+    const container = scrollContainerRef.current;
+    if (!container) return;
+
+    const rect = container.getBoundingClientRect();
+    const edgeSize = 120; // зона у края в пикселях
+    const maxSpeed = 18;  // макс скорость прокрутки
+
+    const step = () => {
+      const distFromLeft = clientX - rect.left;
+      const distFromRight = rect.right - clientX;
+
+      let speed = 0;
+      if (distFromLeft < edgeSize) {
+        speed = -((edgeSize - distFromLeft) / edgeSize) * maxSpeed;
+      } else if (distFromRight < edgeSize) {
+        speed = ((edgeSize - distFromRight) / edgeSize) * maxSpeed;
+      }
+
+      if (speed !== 0) {
+        container.scrollLeft += speed;
+      }
+
+      scrollAnimRef.current = requestAnimationFrame(step);
+    };
+
+    scrollAnimRef.current = requestAnimationFrame(step);
+  };
+
+  const stopAutoScroll = () => {
+    if (scrollAnimRef.current) {
+      cancelAnimationFrame(scrollAnimRef.current);
+      scrollAnimRef.current = null;
+    }
+  };
   const [selectedDeal, setSelectedDeal] = useState<any | null>(null);
-  
+
   // Поля для редактирования ипотеки в модалке
   const [mortgageBank, setMortgageBank] = useState('');
   const [mortgageStatus, setMortgageStatus] = useState('NONE');
@@ -71,6 +203,7 @@ const [searchLoading, setSearchLoading] = useState(false);
 const [selectedClient, setSelectedClient] = useState<any>(null);
 const [selectedUnit, setSelectedUnit] = useState<any>(null);
 const [isPrimaryClient, setIsPrimaryClient] = useState(false);
+const [showRegisterNewClient, setShowRegisterNewClient] = useState(false);
 const [deleteReason, setDeleteReason] = useState('');
 const [customDeleteReason, setCustomDeleteReason] = useState('');
 
@@ -80,25 +213,52 @@ const [customDeleteReason, setCustomDeleteReason] = useState('');
 
   const handleDragStart = (e: React.DragEvent, dealId: string) => {
     e.dataTransfer.setData('text/plain', dealId);
+    const deal = deals.find((d: any) => d.id === dealId);
+    if (deal) setDraggingDealStatus(deal.status);
+  };
+
+  const handleDragEnd = () => {
+    setDraggingDealStatus(null);
+    stopAutoScroll();
   };
 
   const handleDragOver = (e: React.DragEvent) => {
     e.preventDefault();
+    startAutoScroll(e.clientX);
   };
 
   const handleDrop = async (e: React.DragEvent, targetStageId: string) => {
     e.preventDefault();
+    setDraggingDealStatus(null);
+    stopAutoScroll();
     const dealId = e.dataTransfer.getData('text/plain');
     if (!dealId) return;
 
+    const deal = deals.find((d: any) => d.id === dealId);
+    if (!deal) return;
+
     const targetStage = targetStageId === 'CALL_GROUP' ? 'CALL' : targetStageId;
 
+    const { allowed, reason } = isTransitionAllowed(deal.status, targetStage);
+    if (!allowed) {
+      alert(reason || 'Этот переход не разрешён');
+      return;
+    }
+
+    const previousStatus = STRICT_ZONE.includes(deal.status) && targetStage === 'CONSULTATION'
+      ? deal.status
+      : undefined;
+
     const originalDeals = [...deals];
-    setDeals(prev => 
-      prev.map(d => d.id === dealId ? { ...d, status: targetStage } : d)
+    setDeals((prev: any[]) =>
+      prev.map((d: any) => d.id === dealId ? {
+        ...d,
+        status: targetStage,
+        ...(previousStatus ? { previousStatus } : {})
+      } : d)
     );
 
-    const res = await updateDealStatus(dealId, targetStage);
+    const res = await updateDealStatus(dealId, targetStage, previousStatus);
     if (!res.success) {
       alert(res.message || 'Ошибка при обновлении статуса сделки в БД!');
       setDeals(originalDeals);
@@ -176,11 +336,11 @@ const UNIT_DELETE_REASONS = [
       let nextStatus = deal.status;
       if (deal.status === 'CALL') nextStatus = 'SECOND_CALL';
       else if (deal.status === 'SECOND_CALL') nextStatus = 'THIRD_CALL';
-      
+
       if (nextStatus !== deal.status) {
         await updateDealStatus(deal.id, nextStatus);
       }
-      
+
       if (res.attempts >= 3) {
         alert('Достигнуто 3 попытки звонка без ответа. Рекомендуется перевести сделку в статус LOST.');
       }
@@ -203,8 +363,16 @@ const handleAddClient = async () => {
   const res = await addDealClient(selectedDeal.id, selectedClient.id, isPrimaryClient);
   if (res.success) {
     await loadDealExtras(selectedDeal.id);
+    // Если добавили как основного — обновляем имя на доске
+    if (isPrimaryClient) {
+      setDeals((prev: any[]) => prev.map((d: any) =>
+        d.id === selectedDeal.id ? { ...d, clientName: selectedClient.name } : d
+      ));
+      setSelectedDeal((prev: any) => ({ ...prev, clientName: selectedClient.name }));
+    }
     setShowAddClientModal(false);
     setSelectedClient(null);
+    setIsPrimaryClient(false);
     setSearchQuery('');
     setSearchResults([]);
     alert('Клиент добавлен в сделку');
@@ -262,14 +430,14 @@ const handleRemoveUnit = async () => {
 // Сменить основного клиента
 const handleSetPrimaryClient = async (leadId: string) => {
   if (!selectedDeal) return;
-  
+
   // Находим данные нового основного клиента
   const newPrimaryClient = dealClients.find(c => c.leadId === leadId);
   if (!newPrimaryClient) return;
-  
+
   // Обновляем в базе данных
   const res = await setPrimaryClient(selectedDeal.id, leadId);
-  
+
   if (res.success) {
     // Обновляем локальный state selectedDeal
     setSelectedDeal({
@@ -283,7 +451,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
       },
       clientName: newPrimaryClient.name
     });
-    
+
     // Перезагружаем список клиентов
     await loadDealExtras(selectedDeal.id);
     alert('Основной клиент изменен');
@@ -297,7 +465,15 @@ const handleSetPrimaryClient = async (leadId: string) => {
         <p style={{color: '#64748b', fontSize: '0.95rem'}}></p>
       </header>
 
-      <div className={styles.kanbanBoardVertical}>
+      <div
+        className={styles.kanbanScroll}
+        ref={scrollContainerRef}
+        onDragOver={(e) => { e.preventDefault(); startAutoScroll(e.clientX); }}
+        onDragLeave={stopAutoScroll}
+        onDrop={stopAutoScroll}
+      >
+        <div className={styles.kanbanBoardInner}>
+        <div className={styles.kanbanBoardVertical}>
         {STAGES.map((stage) => {
           if (stage.type === 'child') return null;
 
@@ -311,7 +487,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
           const conversion = calculateConversion(stageDeals.length);
           // По ТЗ деньги суммируем только со стадии Личная консультация (CONSULTATION, ранг >= 5)
           const isFinancialStage = stage.id !== 'NEW_LEAD' && stage.id !== 'CLARIFICATION' && stage.id !== 'CALL_GROUP';
-          const stageRevenue = isFinancialStage 
+          const stageRevenue = isFinancialStage
             ? stageDeals.reduce((sum, deal) => sum + (deal.unit?.price || 0), 0)
             : 0;
 
@@ -319,6 +495,20 @@ const handleSetPrimaryClient = async (leadId: string) => {
             <div
               key={stage.id}
               className={`${styles.verticalStage} ${stage.type === 'group' ? styles.groupStage : ''}`}
+              style={{
+                opacity: (() => {
+                  if (!draggingDealStatus) return 1;
+                  if (stage.type === 'group' && stage.children) {
+                    // Для группы звонков — затемняем если ни один дочерний статус недоступен
+                    const anyAllowed = stage.children.some(
+                      child => isTransitionAllowed(draggingDealStatus, child).allowed
+                    );
+                    return anyAllowed ? 1 : 0.35;
+                  }
+                  return isTransitionAllowed(draggingDealStatus, stage.id).allowed ? 1 : 0.35;
+                })(),
+                transition: 'opacity 0.2s',
+              }}
             >
               <div
                 className={styles.stageHeader}
@@ -343,7 +533,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
                 </div>
               </div>
 
-              <div 
+              <div
                 className={styles.verticalCardList}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, stage.id)}
@@ -351,28 +541,37 @@ const handleSetPrimaryClient = async (leadId: string) => {
                 {stageDeals.length > 0 ? (
                   stageDeals.map((deal) => {
                     const daysInStatus = Math.floor((Date.now() - new Date(deal.updatedAt).getTime()) / (1000 * 60 * 60 * 24));
-                    const isSlaOverdue = daysInStatus >= 3; // SLA 3 дня на статус по умолчанию
-                    
+                    const isSlaOverdue = daysInStatus >= 3;
+
+                    // Полоска предыдущего статуса — только в колонке Личная консультация
+                    const prevStatusColor = stage.id === 'CONSULTATION' && deal.previousStatus
+                      ? STAGES.find(s => s.id === deal.previousStatus)?.color
+                      : null;
 
                     return (
-                      <div 
-                        key={deal.id} 
+                      <div
+                        key={deal.id}
                         className={styles.dealCardVertical}
                         draggable
                         onDragStart={(e) => handleDragStart(e, deal.id)}
+                        onDragEnd={handleDragEnd}
                         onClick={() => handleCardClick(deal)}
+                        style={prevStatusColor ? {
+                          borderLeft: `4px solid ${prevStatusColor}`,
+                          paddingLeft: '10px',
+                        } : undefined}
                       >
                         <div className={styles.cardHeaderSmall}>
                           <span className={styles.unitTagSmall}>{deal.unit?.number ? `№${deal.unit.number}` : 'Без объекта'}</span>
                           <span className={styles.dealIdSmall}>#{deal.id.slice(0, 6)}</span>
                         </div>
                         <div className={styles.clientNameSmall}>{deal.clientName || 'Без имени'}</div>
-                        
+
                         <div style={{display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: '10px'}}>
                           <span className={styles.priceTagSmall}>
                             {deal.unit?.price ? `$${deal.unit.price.toLocaleString()}` : '—'}
                           </span>
-                          
+
                           {/* SLA тикер дней на этапе */}
                           <span style={{
                             fontSize: '0.75rem',
@@ -390,9 +589,8 @@ const handleSetPrimaryClient = async (leadId: string) => {
                         {stage.id === 'CALL_GROUP' && (
                           <div style={{marginTop: '10px', paddingTop: '8px', borderTop: '1px solid #f1f5f9', display: 'flex', justifyContent: 'space-between', alignItems: 'center'}}>
                             <span style={{
-                              fontSize: '0.75rem',
-                              fontWeight: 800,
-                              fontSize: '1.25rem',
+                              fontSize: '0.7rem',
+                              fontWeight: 700,
                               color: '#2563eb',
                               background: '#eff6ff',
                               padding: '2px 6px',
@@ -400,7 +598,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
                             }}>
                               {deal.status === 'CALL' ? '1-й звонок' : deal.status === 'SECOND_CALL' ? '2-й звонок' : '3-й звонок'}
                             </span>
-                            <button 
+                            <button
                               className={styles.quickCallBtn}
                               onClick={(e) => handleQuickCall(e, deal)}
                             >
@@ -453,18 +651,19 @@ const handleSetPrimaryClient = async (leadId: string) => {
                           </div>
                         </div>
 
-                        <div 
+                        <div
                           className={styles.verticalCardList}
                           onDragOver={handleDragOver}
                           onDrop={(e) => handleDrop(e, childId)}
                         >
                           {childDeals.length > 0 ? (
                             childDeals.map((deal) => (
-                              <div 
-                                key={deal.id} 
+                              <div
+                                key={deal.id}
                                 className={styles.dealCardVertical}
                                 draggable
                                 onDragStart={(e) => handleDragStart(e, deal.id)}
+                                onDragEnd={handleDragEnd}
                                 onClick={() => handleCardClick(deal)}
                               >
                                 <div className={styles.cardHeaderSmall}>
@@ -496,6 +695,8 @@ const handleSetPrimaryClient = async (leadId: string) => {
           );
         })}
       </div>
+      </div>
+      </div>
 
       {/* Модальное окно деталей сделки с блоком Ипотеки */}
       {selectedDeal && (
@@ -513,7 +714,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
       <h3 style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: '5px', margin: 0 }}>
         👤 Данные клиента
       </h3>
-      <button 
+      <button
         className={styles.quickCallBtn}
         onClick={() => {
           setSearchQuery('');
@@ -528,36 +729,8 @@ const handleSetPrimaryClient = async (leadId: string) => {
       </button>
     </div>
 
-    {/* Основной клиент (из сделки) */}
-    <div style={{ padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-        <div>
-          <strong style={{
-    fontSize: '1.2rem',
-    color: '#0f172a'
-  }}>{selectedDeal.clientName || '—'}</strong>
-          <span style={{ background: '#d1fae5', color: '#065f46', padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', marginLeft: '8px' }}>
-            ОСНОВНОЙ
-          </span>
-          <div
-  style={{
-    fontSize: '1rem',
-    color: '#475569',
-    marginTop: '4px'
-  }}
->{selectedDeal.lead?.phone || '—'}</div>
-          <div
-  style={{
-    fontSize: '1rem',
-    color: '#475569'
-  }}
->{selectedDeal.lead?.email || '—'}</div>
-        </div>
-      </div>
-    </div>
-
-    {/* Дополнительные клиенты */}
-    {dealClients.filter(c => c.leadId !== selectedDeal.lead?.id).map(client => (
+    {/* Все клиенты сделки из dealClients */}
+    {dealClients.map(client => (
       <div key={client.id} style={{ padding: '10px 0', borderBottom: '1px solid #f1f5f9' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
@@ -572,7 +745,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
           </div>
           <div>
             {!client.isPrimary && (
-              <button 
+              <button
                 className={styles.quickCallBtn}
                 style={{ marginRight: '8px' }}
                 onClick={() => handleSetPrimaryClient(client.leadId)}
@@ -580,7 +753,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
                 Сделать основным
               </button>
             )}
-            <button 
+            <button
               className={styles.quickCallBtn}
               style={{ background: '#fee2e2', color: '#ef4444' }}
               onClick={async () => {
@@ -604,7 +777,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
       <h3 style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: '5px', margin: 0 }}>
         🏢 Объект недвижимости
       </h3>
-      <button 
+      <button
         className={styles.quickCallBtn}
         onClick={() => {
           setSearchQuery('');
@@ -642,7 +815,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
               {unit.rooms} комн. • {unit.area} м² • ${Number(unit.price).toLocaleString()}
             </div>
           </div>
-          <button 
+          <button
             className={styles.quickCallBtn}
             style={{ background: '#fee2e2', color: '#ef4444' }}
             onClick={() => setShowRemoveUnitModal({ id: unit.id, number: unit.number })}
@@ -659,13 +832,13 @@ const handleSetPrimaryClient = async (leadId: string) => {
     <h3 style={{ fontWeight: 800, marginBottom: '12px', color: '#2563eb', display: 'flex', alignItems: 'center', gap: '8px' }}>
       🏦 Блок «Ипотека» (Статус одобрения)
     </h3>
-    
+
     <div style={{ display: 'flex', gap: '15px', marginBottom: '12px' }}>
       <div style={{ flex: 1 }}>
         <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 800, fontSize: '1.25rem', color: '#475569', marginBottom: '5px' }}>Выбор банка</label>
-        <select 
-          className={styles.modalInput} 
-          value={mortgageBank} 
+        <select
+          className={styles.modalInput}
+          value={mortgageBank}
           onChange={e => setMortgageBank(e.target.value)}
         >
           <option value="">Не выбрано</option>
@@ -678,9 +851,9 @@ const handleSetPrimaryClient = async (leadId: string) => {
 
       <div style={{ flex: 1 }}>
         <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 800, fontSize: '1.25rem', color: '#475569', marginBottom: '5px' }}>Статус одобрения</label>
-        <select 
-          className={styles.modalInput} 
-          value={mortgageStatus} 
+        <select
+          className={styles.modalInput}
+          value={mortgageStatus}
           onChange={e => setMortgageStatus(e.target.value)}
         >
           <option value="NONE">Нет ипотеки</option>
@@ -694,8 +867,8 @@ const handleSetPrimaryClient = async (leadId: string) => {
 
     <div style={{ marginBottom: '15px' }}>
       <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 800, fontSize: '1.25rem', color: '#475569', marginBottom: '5px' }}>Комментарий по ипотеке</label>
-      <textarea 
-        className={styles.modalInput} 
+      <textarea
+        className={styles.modalInput}
         style={{ minHeight: '60px' }}
         value={mortgageComment}
         onChange={e => setMortgageComment(e.target.value)}
@@ -703,7 +876,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
       />
     </div>
 
-    <button 
+    <button
       className={styles.saveMortgageBtn}
       onClick={handleSaveMortgage}
       disabled={loading}
@@ -716,15 +889,16 @@ const handleSetPrimaryClient = async (leadId: string) => {
 {/* Модалка добавления клиента */}
 {showAddClientModal && (
   <div className={styles.overlay} onClick={() => setShowAddClientModal(false)}>
-    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
       <header className={styles.modalHeader}>
         <h2 style={{ fontWeight: 800 }}>➕ Добавить участника сделки</h2>
         <button className={styles.closeBtn} onClick={() => setShowAddClientModal(false)}>✕</button>
       </header>
-      
+      <div style={{ overflowY: 'auto', flex: 1, padding: '0 4px' }}>
+
       <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-        <input 
-          type="text" 
+        <input
+          type="text"
           className={styles.modalInput}
           placeholder="Имя, телефон или email..."
           value={searchQuery}
@@ -732,14 +906,14 @@ const handleSetPrimaryClient = async (leadId: string) => {
         />
         <button className={styles.quickCallBtn} onClick={handleSearchLeads}>🔍 Поиск</button>
       </div>
-      
+
       {searchLoading && <p>Поиск...</p>}
-      
+
       {searchResults.length > 0 && (
         <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', maxHeight: '250px', overflowY: 'auto', marginBottom: '16px' }}>
           {searchResults.map(lead => (
-            <div 
-              key={lead.id} 
+            <div
+              key={lead.id}
               style={{ padding: '12px', cursor: 'pointer', background: selectedClient?.id === lead.id ? '#eff6ff' : 'white', borderBottom: '1px solid #e2e8f0' }}
               onClick={() => setSelectedClient(lead)}
             >
@@ -748,24 +922,63 @@ const handleSetPrimaryClient = async (leadId: string) => {
           ))}
         </div>
       )}
-      
+
+      {selectedClient && (
+        <div style={{ marginBottom: '16px', padding: '10px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+          <strong>Выбран:</strong> {selectedClient.name} — {selectedClient.phone}
+        </div>
+      )}
+
       {selectedClient && (
         <div style={{ marginBottom: '16px' }}>
           <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <input type="checkbox" checked={isPrimaryClient} onChange={e => setIsPrimaryClient(e.target.checked)} />
-            Сделать основным клиентом (на кого оформляется объект)
+            Сделать основным клиентом (на кого оформляется договор)
           </label>
         </div>
       )}
-      
+
+      {/* Разделитель */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '16px 0' }}>
+        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+        <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>или</span>
+        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+      </div>
+
+      <button
+        className={styles.quickCallBtn}
+        style={{ width: '100%', marginBottom: '16px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', fontWeight: 700 }}
+        onClick={() => setShowRegisterNewClient(true)}
+      >
+        ➕ Зарегистрировать нового клиента
+      </button>
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
         <button className={styles.quickCallBtn} onClick={() => setShowAddClientModal(false)}>Отмена</button>
         <button className={styles.saveMortgageBtn} onClick={handleAddClient} disabled={!selectedClient}>
           Добавить
         </button>
       </div>
+      </div>
     </div>
   </div>
+)}
+
+{/* Модалка регистрации нового клиента поверх модалки добавления участника */}
+{showRegisterNewClient && (
+  <LeadModal
+    onClose={() => setShowRegisterNewClient(false)}
+    organizationId={organizationId}
+    onSuccess={async () => {
+      // После создания — ничего не делаем здесь, всё обрабатывается в onCreated
+    }}
+    onCreated={async (newClientId: string, newClientName: string, newClientPhone: string) => {
+      // Закрываем модалку регистрации
+      setShowRegisterNewClient(false);
+      // Автоматически выбираем нового клиента в модалке добавления участника
+      setSelectedClient({ id: newClientId, name: newClientName, phone: newClientPhone });
+    }}
+  />
 )}
 
 {/* Модалка добавления объекта */}
@@ -776,10 +989,10 @@ const handleSetPrimaryClient = async (leadId: string) => {
         <h2 style={{ fontWeight: 800 }}>🏢 Добавить объект недвижимости</h2>
         <button className={styles.closeBtn} onClick={() => setShowAddUnitModal(false)}>✕</button>
       </header>
-      
+
       <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-        <input 
-          type="text" 
+        <input
+          type="text"
           className={styles.modalInput}
           placeholder="Номер квартиры или ЖК..."
           value={searchQuery}
@@ -787,14 +1000,14 @@ const handleSetPrimaryClient = async (leadId: string) => {
         />
         <button className={styles.quickCallBtn} onClick={handleSearchUnits}>🔍 Поиск</button>
       </div>
-      
+
       {searchLoading && <p>Поиск...</p>}
-      
+
       {searchResults.length > 0 && (
         <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', maxHeight: '250px', overflowY: 'auto', marginBottom: '16px' }}>
           {searchResults.map(unit => (
-            <div 
-              key={unit.id} 
+            <div
+              key={unit.id}
               style={{ padding: '12px', cursor: 'pointer', background: selectedUnit?.id === unit.id ? '#eff6ff' : 'white', borderBottom: '1px solid #e2e8f0' }}
               onClick={() => setSelectedUnit(unit)}
             >
@@ -803,7 +1016,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
           ))}
         </div>
       )}
-      
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
         <button className={styles.quickCallBtn} onClick={() => setShowAddUnitModal(false)}>Отмена</button>
         <button className={styles.saveMortgageBtn} onClick={handleAddUnit} disabled={!selectedUnit}>
@@ -822,12 +1035,12 @@ const handleSetPrimaryClient = async (leadId: string) => {
         <h2 style={{ fontWeight: 800 }}>❌ Удаление объекта №{showRemoveUnitModal.number}</h2>
         <button className={styles.closeBtn} onClick={() => setShowRemoveUnitModal(null)}>✕</button>
       </header>
-      
+
       <p style={{ marginBottom: '16px', color: '#64748b' }}>Укажите причину отказа от объекта:</p>
-      
-      <select 
-        className={styles.modalInput} 
-        value={deleteReason} 
+
+      <select
+        className={styles.modalInput}
+        value={deleteReason}
         onChange={e => setDeleteReason(e.target.value)}
         style={{ marginBottom: '12px' }}
       >
@@ -836,9 +1049,9 @@ const handleSetPrimaryClient = async (leadId: string) => {
           <option key={reason} value={reason}>{reason}</option>
         ))}
       </select>
-      
+
       {deleteReason === 'Другое' && (
-        <input 
+        <input
           type="text"
           className={styles.modalInput}
           placeholder="Укажите причину..."
@@ -846,7 +1059,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
           onChange={e => setCustomDeleteReason(e.target.value)}
         />
       )}
-      
+
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
         <button className={styles.quickCallBtn} onClick={() => setShowRemoveUnitModal(null)}>Отмена</button>
         <button className={styles.saveMortgageBtn} onClick={handleRemoveUnit}>

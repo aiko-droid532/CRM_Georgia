@@ -13,9 +13,10 @@ interface ShakhmatkaClientProps {
   projects: any[];
   leads: any[];
   organizationId: string;
+  userRole?: string;
 }
  
-export default function ShakhmatkaClient({ projects: initialProjects, leads, organizationId }: ShakhmatkaClientProps) {
+export default function ShakhmatkaClient({ projects: initialProjects, leads, organizationId, userRole = 'manager' }: ShakhmatkaClientProps) {
   // Данные и фильтры
   const [projects, setProjects] = useState(initialProjects);
   const [activeProjectId, setActiveProjectId] = useState(projects[0]?.id || null);
@@ -96,6 +97,11 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const [months, setMonths] = useState(12);
   const [monthlyPayment, setMonthlyPayment] = useState(0);
 
+  // Состояния для бронирования (SOFT, HARD, SERVICE)
+  const [bookingType, setBookingType] = useState<'SOFT' | 'HARD' | 'SERVICE'>('SOFT');
+  const [softDuration, setSoftDuration] = useState('1'); // hours
+  const [hardDuration, setHardDuration] = useState('14'); // days
+
   // SSE (Real-time обновления)
   useEffect(() => {
     const eventSource = new EventSource('/api/stream');
@@ -138,6 +144,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     setPriceHistory([]);
     setDownPayment(Math.round(unit.price * 0.3));
     if (leads.length > 0) setSelectedLeadId(leads[0].id);
+    setBookingType('SOFT');
+    setSoftDuration('1');
+    setHardDuration('14');
   };
 
   // Закрыть side-panel
@@ -369,17 +378,25 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const onBook = async () => {
     if (!selectedLeadId) return alert('Выберите клиента!');
     setLoading(true);
+    
+    const duration = bookingType === 'SOFT' 
+      ? Number(softDuration) 
+      : (bookingType === 'HARD' ? Number(hardDuration) : 0);
+
     const res = await createBooking({
       leadId: selectedLeadId,
       unitId: selectedUnit.id,
       organizationId,
-      version: selectedUnit.version || 0
+      type: bookingType,
+      duration: duration
     });
     
     if (res.success) {
       setSelectedUnit(null);
+      alert('✅ Объект успешно забронирован!');
+      router.refresh();
     } else {
-      alert('Ошибка: ' + (res.error || 'Квартира уже забронирована!'));
+      alert('❌ Ошибка: ' + (res.message || 'Не удалось выполнить бронирование.'));
     }
     setLoading(false);
   };
@@ -667,13 +684,99 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
 
             <div className={styles.actionArea}>
               {selectedUnit.status === 'FREE' ? (
-                <>
-                  <select value={selectedLeadId} onChange={(e) => setSelectedLeadId(e.target.value)} className={styles.leadSelect}>
-                    <option value="">Выберите клиента...</option>
-                    {leads.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-                  </select>
-                  <button onClick={onBook} disabled={loading || !selectedLeadId} className={styles.bookBtn}>{loading ? 'Загрузка...' : '⚡ Забронировать'}</button>
-                </>
+                <div className={styles.bookingSection}>
+                  <div>
+                    <span className={styles.bookingLabel}>Тип бронирования</span>
+                    <div className={styles.bookingTypeTabs}>
+                      <button 
+                        type="button"
+                        className={`${styles.bookingTypeTab} ${bookingType === 'SOFT' ? styles.bookingTypeTabActiveSoft : ''}`} 
+                        onClick={() => setBookingType('SOFT')}
+                      >
+                        Устная (Soft)
+                      </button>
+                      <button 
+                        type="button"
+                        className={`${styles.bookingTypeTab} ${bookingType === 'HARD' ? styles.bookingTypeTabActiveHard : ''}`} 
+                        onClick={() => setBookingType('HARD')}
+                      >
+                        Платная (Hard)
+                      </button>
+                      
+                        <button 
+                          type="button"
+                          className={`${styles.bookingTypeTab} ${bookingType === 'SERVICE' ? styles.bookingTypeTabActiveService : ''}`} 
+                          onClick={() => setBookingType('SERVICE')}
+                        >
+                          Служебная
+                        </button>
+                      
+                    </div>
+                  </div>
+
+                  <div>
+                    {bookingType === 'SOFT' && (
+                      <>
+                        <span className={styles.bookingLabel}>Срок бронирования</span>
+                        <select 
+                          value={softDuration} 
+                          onChange={(e) => setSoftDuration(e.target.value)} 
+                          className={styles.leadSelect}
+                        >
+                          <option value="0.5">30 минут</option>
+                          <option value="1">1 час</option>
+                          <option value="2">2 часа</option>
+                          <option value="4">4 часа</option>
+                          {(userRole === 'supervisor' || userRole === 'admin' || userRole === 'rop') && (
+                            <option value="24">24 часа</option>
+                          )}
+                        </select>
+                      </>
+                    )}
+
+                    {bookingType === 'HARD' && (
+                      <>
+                        <span className={styles.bookingLabel}>Срок бронирования</span>
+                        <select 
+                          value={hardDuration} 
+                          onChange={(e) => setHardDuration(e.target.value)} 
+                          className={styles.leadSelect}
+                        >
+                          <option value="7">7 дней</option>
+                          <option value="10">10 дней</option>
+                          <option value="14">14 дней</option>
+                          <option value="30">30 дней (под ипотеку)</option>
+                        </select>
+                      </>
+                    )}
+
+                    {bookingType === 'SERVICE' && (
+                      <div className={styles.durationBanner}>
+                        🔒 Бессрочно (до ручной отмены)
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <span className={styles.bookingLabel}>Выберите клиента</span>
+                    <select 
+                      value={selectedLeadId} 
+                      onChange={(e) => setSelectedLeadId(e.target.value)} 
+                      className={styles.leadSelect}
+                    >
+                      <option value="">Выберите клиента...</option>
+                      {leads.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                    </select>
+                  </div>
+
+                  <button 
+                    onClick={onBook} 
+                    disabled={loading || !selectedLeadId} 
+                    className={styles.bookBtn}
+                  >
+                    {loading ? 'Загрузка...' : '⚡ Забронировать'}
+                  </button>
+                </div>
               ) : (
                 <div className={styles.bookedAlert}><span>🔒 Объект забронирован</span></div>
               )}

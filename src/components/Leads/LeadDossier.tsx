@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import styles from './LeadDossier.module.css';
 import { searchUnits, addInterest } from '@/app/actions/inventory';
-import { createDeal, updateClient, getLeadById, savePaymentScheduleAction, anonymizeClient, logPhoneView } from '@/app/actions/leads';
+import { createDeal, updateClient, getLeadById, savePaymentScheduleAction, anonymizeClient, logPhoneView, qualifyLead } from '@/app/actions/leads';
 import { useRouter } from 'next/navigation';
 import { getExchangeRate } from '@/app/actions/exchange';
 
 
 interface LeadDossierProps {
   lead: any;
+  projects?: any[];
   onClose: () => void;
   organizationId: string;
 }
@@ -21,9 +22,10 @@ const CLIENT_TYPE_LABELS: Record<string, { label: string; icon: string; color: s
   LEAD: { label: 'Лид', icon: '👤', color: '#64748b' },
 };
 
-export default function LeadDossier({ lead: initialLead, onClose, organizationId }: LeadDossierProps) {
+export default function LeadDossier({ lead: initialLead, projects = [], onClose, organizationId }: LeadDossierProps) {
   const [activeTab, setActiveTab] = useState<Tab>('info');
   const [lead, setLead] = useState(initialLead);
+  const isClient = lead.status === 'CONVERTED' || (lead.type && lead.type !== 'LEAD');
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
   const [phoneRevealed, setPhoneRevealed] = useState(false);
@@ -36,6 +38,20 @@ export default function LeadDossier({ lead: initialLead, onClose, organizationId
     phone: initialLead.phone,
     iin: initialLead.iin || ''
   });
+
+  const [qualifyForm, setQualifyForm] = useState({
+    interestedProjectId: initialLead.interestedProjectId || '',
+    propertyType: initialLead.propertyType || 'Apartment',
+    budgetMin: initialLead.budgetMin || '',
+    budgetMax: initialLead.budgetMax || '',
+    paymentMethod: initialLead.paymentMethod || 'Cash',
+    sourceInfo: initialLead.sourceInfo || '',
+    roomsInterested: initialLead.roomsInterested || '',
+    areaMin: initialLead.areaMin || '',
+    areaMax: initialLead.areaMax || '',
+    deliveryDeadline: initialLead.deliveryDeadline || ''
+  });
+  const [isEditingQualify, setIsEditingQualify] = useState(false);
 
   // States for anonymization
   const [showAnonymizeConfirm, setShowAnonymizeConfirm] = useState(false);
@@ -106,10 +122,52 @@ export default function LeadDossier({ lead: initialLead, onClose, organizationId
       if (full) {
         setLead(full);
         if (full.managerNotes) setNoteText(full.managerNotes);
+        setQualifyForm({
+          interestedProjectId: full.interestedProjectId || '',
+          propertyType: full.propertyType || 'Apartment',
+          budgetMin: full.budgetMin || '',
+          budgetMax: full.budgetMax || '',
+          paymentMethod: full.paymentMethod || 'Cash',
+          sourceInfo: full.sourceInfo || '',
+          roomsInterested: full.roomsInterested || '',
+          areaMin: full.areaMin || '',
+          areaMax: full.areaMax || '',
+          deliveryDeadline: full.deliveryDeadline || ''
+        });
+        setFilters({
+          rooms: full.roomsInterested ? full.roomsInterested.toString() : '',
+          minArea: full.areaMin ? full.areaMin.toString() : '',
+          maxPrice: full.budgetMax ? full.budgetMax.toString() : '',
+          type: full.propertyType || 'Apartment'
+        });
       }
     }
     loadFullData();
   }, [lead.id]);
+
+  const handleSaveQualify = async () => {
+    setLoading(true);
+    const res = await qualifyLead(lead.id, {
+      ...qualifyForm,
+      budgetMin: qualifyForm.budgetMin ? parseFloat(qualifyForm.budgetMin.toString()) : undefined,
+      budgetMax: qualifyForm.budgetMax ? parseFloat(qualifyForm.budgetMax.toString()) : undefined,
+      roomsInterested: qualifyForm.roomsInterested ? parseInt(qualifyForm.roomsInterested.toString()) : null,
+      areaMin: qualifyForm.areaMin ? parseFloat(qualifyForm.areaMin.toString()) : null,
+      areaMax: qualifyForm.areaMax ? parseFloat(qualifyForm.areaMax.toString()) : null
+    });
+    setLoading(false);
+    if (res.success) {
+      setIsEditingQualify(false);
+      const updated = await getLeadById(lead.id);
+      if (updated) {
+        setLead(updated);
+        alert('Анкета квалификации лида успешно сохранена!');
+      }
+      router.refresh();
+    } else {
+      alert('Произошла ошибка при сохранении квалификации лида');
+    }
+  };
 
   const [selectedInterestForCalc, setSelectedInterestForCalc] = useState<any>(null);
   const [paymentScheme, setPaymentScheme] = useState('CASH');
@@ -313,7 +371,9 @@ export default function LeadDossier({ lead: initialLead, onClose, organizationId
               <div className={styles.metaInfo}>
                 {/* Бейдж типа клиента */}
                 {(() => {
-                  const ct = CLIENT_TYPE_LABELS[lead.type || lead.clientType || 'LEAD'] || CLIENT_TYPE_LABELS.LEAD;
+                  const ct = lead.status === 'CONVERTED' && (lead.type === 'LEAD' || !lead.type)
+                    ? { label: 'Клиент', icon: '👤', color: '#059669' }
+                    : (CLIENT_TYPE_LABELS[lead.type || lead.clientType || 'LEAD'] || CLIENT_TYPE_LABELS.LEAD);
                   return (
                     <span className={styles.clientTypeBadge} style={{ background: ct.color + '18', color: ct.color, border: `1px solid ${ct.color}40` }}>
                       {ct.icon} {ct.label}
@@ -331,7 +391,9 @@ export default function LeadDossier({ lead: initialLead, onClose, organizationId
         <nav className={styles.tabs}>
           <button className={activeTab === 'info' ? styles.activeTab : ''} onClick={() => setActiveTab('info')}>Профиль</button>
           <button className={activeTab === 'interests' ? styles.activeTab : ''} onClick={() => setActiveTab('interests')}>Подбор объектов</button>
-          <button className={activeTab === 'finance' ? styles.activeTab : ''} onClick={() => setActiveTab('finance')}>Финансовый план</button>
+          {isClient && (
+            <button className={activeTab === 'finance' ? styles.activeTab : ''} onClick={() => setActiveTab('finance')}>Финансовый план</button>
+          )}
           <button className={activeTab === 'history' ? styles.activeTab : ''} onClick={() => setActiveTab('history')}>История активности</button>
         </nav>
 
@@ -360,53 +422,59 @@ export default function LeadDossier({ lead: initialLead, onClose, organizationId
                     {isEditing ? <input className={styles.editInput} value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})} /> : <p className={styles.val}>{lead.name}</p>}
                   </div>
                   <div className={styles.field}>
-                    <label>Контактный номер 🔒</label>
+                    <label>Контактный номер {isClient && '🔒'}</label>
                     {isEditing ? (
                       <input className={styles.editInput} value={editData.phone} onChange={e => setEditData({...editData, phone: e.target.value})} />
                     ) : (
                       <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                        <p className={styles.val}>{phoneRevealed ? lead.phone : maskPhone(lead.phone)}</p>
-                        <button 
-                          type="button"
-                          onClick={handleRevealPhone}
-                          style={{ 
-                            background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', 
-                            padding: '2px 8px', cursor: 'pointer', fontSize: '0.75rem', color: '#64748b',
-                            fontWeight: 600
-                          }}
-                        >
-                          {phoneRevealed ? '🔒 Скрыть' : '👁 Показать (с причиной)'}
-                        </button>
+                        <p className={styles.val}>{( !isClient || phoneRevealed) ? lead.phone : maskPhone(lead.phone)}</p>
+                        {isClient && (
+                          <button 
+                            type="button"
+                            onClick={handleRevealPhone}
+                            style={{ 
+                              background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', 
+                              padding: '2px 8px', cursor: 'pointer', fontSize: '0.75rem', color: '#64748b',
+                              fontWeight: 600
+                            }}
+                          >
+                            {phoneRevealed ? '🔒 Скрыть' : '👁 Показать (с причиной)'}
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
-                  <div className={styles.field}>
-                    <label>ИИН</label>
-                    {isEditing ? <input className={styles.editInput} value={editData.iin} onChange={e => setEditData({...editData, iin: e.target.value})} /> : <p className={styles.val}>{lead.iin || '—'}</p>}
-                  </div>
+                  {isClient && (
+                    <div className={styles.field}>
+                      <label>ИИН</label>
+                      {isEditing ? <input className={styles.editInput} value={editData.iin} onChange={e => setEditData({...editData, iin: e.target.value})} /> : <p className={styles.val}>{lead.iin || '—'}</p>}
+                    </div>
+                  )}
                   <div className={styles.field}>
                     <label>Источник лида</label>
                     <p className={styles.val}>{lead.source || '—'}</p>
                   </div>
-                  <div className={styles.field}>
-                    <label>Email 🔒</label>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      <p className={styles.val}>{emailRevealed ? lead.email : maskEmail(lead.email)}</p>
-                      {lead.email && (
-                        <button 
-                          type="button"
-                          onClick={() => emailRevealed ? setEmailRevealed(false) : handleOpenReveal('email')}
-                          style={{ 
-                            background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', 
-                            padding: '2px 8px', cursor: 'pointer', fontSize: '0.75rem', color: '#64748b',
-                            fontWeight: 600
-                          }}
-                        >
-                          {emailRevealed ? '🔒 Скрыть' : '👁 Показать (с причиной)'}
-                        </button>
-                      )}
+                  {isClient && (
+                    <div className={styles.field}>
+                      <label>Email 🔒</label>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        <p className={styles.val}>{emailRevealed ? lead.email : maskEmail(lead.email)}</p>
+                        {lead.email && (
+                          <button 
+                            type="button"
+                            onClick={() => emailRevealed ? setEmailRevealed(false) : handleOpenReveal('email')}
+                            style={{ 
+                              background: 'none', border: '1px solid #e2e8f0', borderRadius: '6px', 
+                              padding: '2px 8px', cursor: 'pointer', fontSize: '0.75rem', color: '#64748b',
+                              fontWeight: 600
+                            }}
+                          >
+                            {emailRevealed ? '🔒 Скрыть' : '👁 Показать (с причиной)'}
+                          </button>
+                        )}
+                      </div>
                     </div>
-                  </div>
+                  )}
 
                   {/* Personal Number (для резидентов Грузии) */}
                   {(lead.type === 'RESIDENT_GE' || lead.personalNumber) && (
@@ -451,32 +519,171 @@ export default function LeadDossier({ lead: initialLead, onClose, organizationId
                 {isEditing && <button className={styles.saveChangesBtn} onClick={() => handleUpdateClient()} disabled={loading}>{loading ? 'Сохранение...' : 'Сохранить изменения'}</button>}
               </div>
 
+              {/* Анкета квалификации для Лида */}
+              {!isClient && (
+                <div className={styles.sectionCard}>
+                  <div className={styles.sectionHeader}>
+                    <h3>📋 Анкета квалификации лида</h3>
+                    {lead.interestedProjectId && (
+                      <button className={styles.editBtn} onClick={() => setIsEditingQualify(!isEditingQualify)}>
+                        {isEditingQualify ? 'Отмена' : 'Редактировать анкету'}
+                      </button>
+                    )}
+                  </div>
+
+                  {isEditingQualify ? (
+                    <div>
+                      <div className={styles.grid} style={{ marginBottom: '24px' }}>
+                        <div className={styles.field}>
+                          <label>ЖК интереса</label>
+                          <select className={styles.editInput} value={qualifyForm.interestedProjectId} onChange={e => setQualifyForm({...qualifyForm, interestedProjectId: e.target.value})}>
+                            <option value="">Не выбран</option>
+                            {projects && projects.map((p: any) => (
+                              <option key={p.id} value={p.id}>{p.nameRu || p.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className={styles.field}>
+                          <label>Тип недвижимости</label>
+                          <select className={styles.editInput} value={qualifyForm.propertyType} onChange={e => setQualifyForm({...qualifyForm, propertyType: e.target.value})}>
+                            <option value="Apartment">Квартира</option>
+                            <option value="Commercial">Коммерция</option>
+                            <option value="Parking">Паркинг</option>
+                            <option value="Storage">Кладовка</option>
+                          </select>
+                        </div>
+                        <div className={styles.field}>
+                          <label>Комнатность</label>
+                          <select className={styles.editInput} value={qualifyForm.roomsInterested} onChange={e => setQualifyForm({...qualifyForm, roomsInterested: e.target.value})}>
+                            <option value="">Любая</option>
+                            <option value="1">1 комната</option>
+                            <option value="2">2 комнаты</option>
+                            <option value="3">3 комнаты</option>
+                            <option value="4">4+ комнаты</option>
+                          </select>
+                        </div>
+                        <div className={styles.field}>
+                          <label>Срок сдачи</label>
+                          <select className={styles.editInput} value={qualifyForm.deliveryDeadline} onChange={e => setQualifyForm({...qualifyForm, deliveryDeadline: e.target.value})}>
+                            <option value="">Не важно</option>
+                            <option value="2024">2024 год</option>
+                            <option value="2025">2025 год</option>
+                            <option value="2026">2026 год</option>
+                            <option value="2027+">2027+ год</option>
+                          </select>
+                        </div>
+                        <div className={styles.field}>
+                          <label>Способ оплаты</label>
+                          <select className={styles.editInput} value={qualifyForm.paymentMethod} onChange={e => setQualifyForm({...qualifyForm, paymentMethod: e.target.value})}>
+                            <option value="Cash">100% оплата</option>
+                            <option value="Installment">Рассрочка</option>
+                            <option value="Mortgage">Ипотека</option>
+                            <option value="Cession">Цессия</option>
+                          </select>
+                        </div>
+                        <div className={styles.field}>
+                          <label>Доп. инфо (источник)</label>
+                          <input className={styles.editInput} placeholder="Детали источника" value={qualifyForm.sourceInfo} onChange={e => setQualifyForm({...qualifyForm, sourceInfo: e.target.value})} />
+                        </div>
+                        <div className={styles.field}>
+                          <label>Площадь (м²)</label>
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <input className={styles.editInput} placeholder="От" value={qualifyForm.areaMin} onChange={e => setQualifyForm({...qualifyForm, areaMin: e.target.value})} />
+                            <input className={styles.editInput} placeholder="До" value={qualifyForm.areaMax} onChange={e => setQualifyForm({...qualifyForm, areaMax: e.target.value})} />
+                          </div>
+                        </div>
+                        <div className={styles.field}>
+                          <label>Бюджет (USD)</label>
+                          <div style={{ display: 'flex', gap: '10px' }}>
+                            <input className={styles.editInput} placeholder="От" value={qualifyForm.budgetMin} onChange={e => setQualifyForm({...qualifyForm, budgetMin: e.target.value})} />
+                            <input className={styles.editInput} placeholder="До" value={qualifyForm.budgetMax} onChange={e => setQualifyForm({...qualifyForm, budgetMax: e.target.value})} />
+                          </div>
+                        </div>
+                      </div>
+                      <button className={styles.saveChangesBtn} style={{ marginTop: 0 }} onClick={handleSaveQualify} disabled={loading}>
+                        {loading ? 'Сохранение...' : 'Сохранить анкету'}
+                      </button>
+                    </div>
+                  ) : lead.interestedProjectId ? (
+                    <div className={styles.grid}>
+                      <div className={styles.field}>
+                        <label>ЖК интереса</label>
+                        <p className={styles.val}>{lead.interestedProjectName || lead.interestedProjectId}</p>
+                      </div>
+                      <div className={styles.field}>
+                        <label>Тип недвижимости</label>
+                        <p className={styles.val}>{lead.propertyType === 'Apartment' ? 'Квартира' : lead.propertyType === 'Commercial' ? 'Коммерция' : lead.propertyType || '—'}</p>
+                      </div>
+                      <div className={styles.field}>
+                        <label>Комнатность</label>
+                        <p className={styles.val}>{lead.roomsInterested ? `${lead.roomsInterested} комн.` : 'Любая'}</p>
+                      </div>
+                      <div className={styles.field}>
+                        <label>Площадь</label>
+                        <p className={styles.val}>
+                          {lead.areaMin || lead.areaMax ? `${lead.areaMin || 0} – ${lead.areaMax || '∞'} м²` : 'Не важно'}
+                        </p>
+                      </div>
+                      <div className={styles.field}>
+                        <label>Бюджет</label>
+                        <p className={styles.val}>
+                          {lead.budgetMin || lead.budgetMax ? `$${(lead.budgetMin || 0).toLocaleString()} – $${(lead.budgetMax || '∞').toLocaleString()}` : 'Не важно'}
+                        </p>
+                      </div>
+                      <div className={styles.field}>
+                        <label>Способ оплаты</label>
+                        <p className={styles.val}>
+                          {lead.paymentMethod === 'Cash' ? '100% оплата' : lead.paymentMethod === 'Installment' ? 'Рассрочка' : lead.paymentMethod === 'Mortgage' ? 'Ипотека' : lead.paymentMethod || '—'}
+                        </p>
+                      </div>
+                      <div className={styles.field}>
+                        <label>Срок сдачи</label>
+                        <p className={styles.val}>{lead.deliveryDeadline || 'Не важно'}</p>
+                      </div>
+                      <div className={styles.field}>
+                        <label>Детали источника</label>
+                        <p className={styles.val}>{lead.sourceInfo || '—'}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ textAlign: 'center', padding: '24px', background: '#f8fafc', borderRadius: '16px', border: '1px dashed #cbd5e1' }}>
+                      <p style={{ color: '#64748b', margin: '0 0 16px 0', fontSize: '0.95rem' }}>Анкета квалификации этого лида еще не заполнена.</p>
+                      <button className={`${styles.editBtn}`} style={{ background: '#2563eb', color: 'white', border: 'none' }} onClick={() => setIsEditingQualify(true)}>
+                        📋 Заполнить анкету квалификации
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* PDPS Согласия */}
-              <div className={styles.sectionCard}>
-                <div className={styles.sectionHeader}>
-                  <h3>🛡️ Согласие PDPS</h3>
-                </div>
-                <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
-                  <div style={{ 
-                    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', 
-                    borderRadius: '12px', fontSize: '0.9rem', fontWeight: 600,
-                    background: lead.consentToPdProcessing ? '#ecfdf5' : '#fef2f2',
-                    color: lead.consentToPdProcessing ? '#059669' : '#dc2626',
-                    border: `1px solid ${lead.consentToPdProcessing ? '#a7f3d0' : '#fecaca'}`
-                  }}>
-                    {lead.consentToPdProcessing ? '✅' : '❌'} Обработка ПД
+              {isClient && (
+                <div className={styles.sectionCard}>
+                  <div className={styles.sectionHeader}>
+                    <h3>🛡️ Согласие PDPS</h3>
                   </div>
-                  <div style={{ 
-                    display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', 
-                    borderRadius: '12px', fontSize: '0.9rem', fontWeight: 600,
-                    background: lead.optInMarketing ? '#ecfdf5' : '#f8fafc',
-                    color: lead.optInMarketing ? '#059669' : '#94a3b8',
-                    border: `1px solid ${lead.optInMarketing ? '#a7f3d0' : '#e2e8f0'}`
-                  }}>
-                    {lead.optInMarketing ? '✅' : '—'} Маркетинг
+                  <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap' }}>
+                    <div style={{ 
+                      display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', 
+                      borderRadius: '12px', fontSize: '0.9rem', fontWeight: 600,
+                      background: lead.consentToPdProcessing ? '#ecfdf5' : '#fef2f2',
+                      color: lead.consentToPdProcessing ? '#059669' : '#dc2626',
+                      border: `1px solid ${lead.consentToPdProcessing ? '#a7f3d0' : '#fecaca'}`
+                    }}>
+                      {lead.consentToPdProcessing ? '✅' : '❌'} Обработка ПД
+                    </div>
+                    <div style={{ 
+                      display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 16px', 
+                      borderRadius: '12px', fontSize: '0.9rem', fontWeight: 600,
+                      background: lead.optInMarketing ? '#ecfdf5' : '#f8fafc',
+                      color: lead.optInMarketing ? '#059669' : '#94a3b8',
+                      border: `1px solid ${lead.optInMarketing ? '#a7f3d0' : '#e2e8f0'}`
+                    }}>
+                      {lead.optInMarketing ? '✅' : '—'} Маркетинг
+                    </div>
                   </div>
                 </div>
-              </div>
+              )}
 
               <div className={styles.sectionCard}>
                 <div className={styles.sectionHeader}>

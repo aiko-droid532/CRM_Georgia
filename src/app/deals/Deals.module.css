@@ -16,8 +16,38 @@
       transparent 40%
     ),
     #f8fafc;
+}
 
+.kanbanScroll {
   overflow-x: auto;
+  margin-bottom: 16px;
+  margin-top: 16px;
+  padding-top: 8px;
+  transform: rotateX(180deg);
+}
+
+.kanbanBoardInner {
+  transform: rotateX(180deg);
+  padding-top: 4px;
+}
+
+
+.kanbanScroll::-webkit-scrollbar {
+  height: 6px;
+}
+
+.kanbanScroll::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 4px;
+}
+
+.kanbanScroll::-webkit-scrollbar-thumb {
+  background: #94a3b8;
+  border-radius: 4px;
+}
+
+.kanbanScroll::-webkit-scrollbar-thumb:hover {
+  background: #64748b;
 }
 
 .kanbanBoardVertical {
@@ -30,8 +60,8 @@
 }
 
 .verticalStage {
-  width: 420px;
-  min-width: 420px;
+  width: 350px;
+  min-width: 350px;
 
   background: rgba(255,255,255,0.85);
   backdrop-filter: blur(12px);
@@ -230,14 +260,14 @@
 }
 
 .clientNameSmall {
-  font-size: 1rem;
-  font-weight: 800;
+  font-size: 0.85rem;
+  font-weight: 700;
   color: #0f172a;
   margin-bottom: 8px;
 }
 
 .priceTagSmall {
-  font-size: 0.90rem;
+  font-size: 0.8rem;
   font-weight: 700;
   color: #0f172a;
 }
@@ -260,11 +290,6 @@
 .childStageCard {
   border-left: 3px solid #cbd5e1;
   padding-left: 10px;
-}
-
-.verticalStage {
-  width: 500px;
-  min-width: 500px;
 }
 
 /* Стили модального окна и деталей сделки */
@@ -397,4 +422,3 @@
   background: #dbeafe;
   color: #1d4ed8;
 }
-

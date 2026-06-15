@@ -15,6 +15,7 @@ export async function searchUnits(filters: {
         u.*, 
         b.number as "blockNumber",
         p.name as "projectName",
+        p.id as "projectId",
         EXISTS (
           SELECT 1 FROM "LeadInterest" li 
           WHERE li."unitId" = u.id AND li.status::text = 'ACTIVE'
@@ -36,11 +37,11 @@ export async function searchUnits(filters: {
 
     return units.map(u => ({
       ...u,
-      isBooked: !!u.isBooked || u.status === 'RESERVATION_ORAL' || u.status === 'RESERVATION_PAID',
+      isBooked: u.status === 'FREE' ? false : (!!u.isBooked || u.status === 'RESERVATION_ORAL' || u.status === 'RESERVATION_PAID'),
       isSold: !!u.isSold || u.status === 'SOLD',
       block: {
         number: u.blockNumber,
-        project: { name: u.projectName }
+        project: { id: u.projectId, name: u.projectName }
       }
     }));
   } catch (error) {
@@ -63,7 +64,7 @@ export async function addInterest(leadId: string, unitId: string) {
       SET "status" = 'RESERVATION_ORAL'::"UnitStatus" 
       WHERE "id" = ${unitId}
     `;
-    return { success: true };
+    return { success: true, interestId: id };
   } catch (error) {
     console.error('Add interest SQL error:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };

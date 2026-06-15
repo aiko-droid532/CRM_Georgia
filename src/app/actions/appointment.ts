@@ -52,7 +52,7 @@ export async function scheduleAppointment(
       WHERE id = ${leadId}
     `;
     
-    revalidatePath('/leads');
+    revalidatePath('/clients');
     return { success: true };
   } catch (error) {
     console.error('scheduleAppointment error:', error);
@@ -70,7 +70,7 @@ export async function cancelAppointment(leadId: string, reason: string) {
           "updatedAt" = NOW()
       WHERE id = ${leadId}
     `;
-    revalidatePath('/leads');
+    revalidatePath('/clients');
     return { success: true };
   } catch (error) {
     console.error('cancelAppointment error:', error);
@@ -87,7 +87,7 @@ export async function completeAppointment(leadId: string) {
           "updatedAt" = NOW()
       WHERE id = ${leadId}
     `;
-    revalidatePath('/leads');
+    revalidatePath('/clients');
     return { success: true };
   } catch (error) {
     console.error('completeAppointment error:', error);

@@ -96,7 +96,6 @@ export async function createClient(formData: {
       )
     `;
 
-    revalidatePath('/leads');
     revalidatePath('/clients');
     return { success: true, client: { id: clientId } };
   } catch (error) {
@@ -185,9 +184,11 @@ export async function logPhoneView(leadId: string, managerId: string, reason: st
 export async function getLeads(organizationId: string) {
   try {
     const leads: any[] = await prisma.$queryRaw`
-      SELECT * FROM "Lead" 
-      WHERE "organizationId" = ${organizationId} 
-      ORDER BY "createdAt" DESC
+      SELECT l.*, p.name as "interestedProjectName"
+      FROM "Lead" l
+      LEFT JOIN "Project" p ON l."interestedProjectId" = p.id
+      WHERE l."organizationId" = ${organizationId} 
+      ORDER BY l."createdAt" DESC
     `;
 
     if (leads.length === 0) return [];
@@ -215,6 +216,42 @@ export async function getLeads(organizationId: string) {
       ORDER BY "createdAt" DESC
     `;
 
+    // Fetch all deals where the client is either Deal.leadId or DealClient.leadId
+    const deals: any[] = await prisma.$queryRaw`
+      SELECT DISTINCT
+        d.id,
+        d."leadId",
+        d."unitId",
+        d.status,
+        d."createdAt",
+        d."updatedAt",
+        COALESCE(dc."leadId", d."leadId") as "involvedLeadId",
+        u.number as "unitNumber",
+        u.price as "unitPrice",
+        u.area as "unitArea",
+        u.rooms as "unitRooms",
+        p.name as "projectName"
+      FROM "Deal" d
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      LEFT JOIN "DealClient" dc ON d.id = dc."dealId"
+      WHERE d."leadId" IN (${Prisma.join(leadIds)}) OR dc."leadId" IN (${Prisma.join(leadIds)})
+    `;
+
+    let dealUnits: any[] = [];
+    if (deals.length > 0) {
+      const dealIds = Array.from(new Set(deals.map(d => d.id)));
+      dealUnits = await prisma.$queryRaw`
+        SELECT du.id, du."dealId", du."unitId", u.number as "unitNumber", u.price as "unitPrice", u.area as "unitArea", u.rooms as "unitRooms", p.name as "projectName"
+        FROM "DealUnit" du
+        JOIN "Unit" u ON du."unitId" = u.id
+        JOIN "Block" b ON u."blockId" = b.id
+        JOIN "Project" p ON b."projectId" = p.id
+        WHERE du."dealId" IN (${Prisma.join(dealIds)}) AND du."isDeleted" = false
+      `;
+    }
+
     return leads.map(lead => {
       const interests = allInterests
         .filter(i => i.leadId === lead.id)
@@ -233,6 +270,76 @@ export async function getLeads(organizationId: string) {
             }
           }
         }));
+
+      // Find all deals where this lead is involved
+      const leadDeals = deals.filter(d => d.involvedLeadId === lead.id || d.leadId === lead.id);
+
+      for (const d of leadDeals) {
+        // Primary unit of the deal
+        const primaryInInterests = interests.some(i => i.unitId === d.unitId);
+        if (primaryInInterests) {
+          interests.forEach(i => {
+            if (i.unitId === d.unitId) {
+              i.status = 'DEAL';
+            }
+          });
+        } else {
+          interests.push({
+            id: `deal-interest-primary-${d.id}`,
+            leadId: lead.id,
+            unitId: d.unitId,
+            status: 'DEAL',
+            createdAt: d.createdAt,
+            updatedAt: d.updatedAt,
+            unit: {
+              id: d.unitId,
+              number: d.unitNumber,
+              price: d.unitPrice,
+              area: d.unitArea,
+              rooms: d.unitRooms,
+              block: {
+                project: {
+                  name: d.projectName
+                }
+              }
+            }
+          });
+        }
+
+        // Additional units of this deal
+        const addUnits = dealUnits.filter(du => du.dealId === d.id);
+        for (const du of addUnits) {
+          const extraInInterests = interests.some(i => i.unitId === du.unitId);
+          if (extraInInterests) {
+            interests.forEach(i => {
+              if (i.unitId === du.unitId) {
+                i.status = 'DEAL';
+              }
+            });
+          } else {
+            interests.push({
+              id: `deal-interest-extra-${du.id}`,
+              leadId: lead.id,
+              unitId: du.unitId,
+              status: 'DEAL',
+              createdAt: d.createdAt,
+              updatedAt: d.updatedAt,
+              unit: {
+                id: du.unitId,
+                number: du.unitNumber,
+                price: du.unitPrice,
+                area: du.unitArea,
+                rooms: du.unitRooms,
+                block: {
+                  project: {
+                    name: du.projectName
+                  }
+                }
+              }
+            });
+          }
+        }
+      }
 
       return {
         ...lead,
@@ -271,7 +378,7 @@ export async function assignLeadToManager(leadId: string, managerId: string) {
     `;
     if (res === 0) return { success: false, error: 'Лид уже взят в работу другим менеджером!' };
     
-    revalidatePath('/leads');
+    revalidatePath('/clients');
     return { success: true };
   } catch (error) {
     console.error('assignLeadToManager error:', error);
@@ -295,8 +402,27 @@ export async function logCallAttempt(leadId: string) {
         UPDATE "Lead" SET "callAttempts" = ${attempts}, "updatedAt" = NOW() WHERE id = ${leadId}
       `;
     }
+
+    // Sync with Deal Status
+    let dealStatusToSet = '';
+    if (attempts === 1) {
+      dealStatusToSet = 'CALL';
+    } else if (attempts === 2) {
+      dealStatusToSet = 'SECOND_CALL';
+    } else if (attempts >= 3) {
+      dealStatusToSet = 'FAILED';
+    }
+
+    if (dealStatusToSet) {
+      await prisma.$executeRaw`
+        UPDATE "Deal"
+        SET "status" = ${dealStatusToSet}::"DealStatus", "updatedAt" = NOW()
+        WHERE "leadId" = ${leadId} AND "status" NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')
+      `;
+    }
     
-    revalidatePath('/leads');
+    revalidatePath('/clients');
+    revalidatePath('/deals');
     return { success: true, attempts };
   } catch (error) {
     console.error('logCallAttempt error:', error);
@@ -309,7 +435,7 @@ export async function updateLeadStatus(leadId: string, newStatus: string) {
     await prisma.$executeRaw`
       UPDATE "Lead" SET "status" = ${newStatus}::"LeadStatus", "updatedAt" = NOW() WHERE id = ${leadId}
     `;
-    revalidatePath('/leads');
+    revalidatePath('/clients');
     return { success: true };
   } catch (error) {
     console.error('updateLeadStatus error:', error);
@@ -376,7 +502,7 @@ export async function updateClient(data: {
     const current = currentList[0];
     if (!current) return { success: false };
 
-    const updates: string[] = [];
+    const updates: any[] = [];
     const logs = [];
 
     if (data.name && data.name !== current.name) {
@@ -436,22 +562,126 @@ export async function getLeadById(id: string) {
       WHERE i."leadId" = ${id}
     `;
 
+    // Get all deals where the client is primary or participant
     const deals: any[] = await prisma.$queryRaw`
-      SELECT d.*, u.number as "unitNumber", u.price as "unitPrice", p.name as "projectName"
+      SELECT DISTINCT
+        d.id,
+        d."leadId",
+        d."unitId",
+        d.status,
+        d."paymentType",
+        d."downPayment",
+        d."totalAmount",
+        d."mortgageBank",
+        d."mortgageStatus",
+        d."mortgageComment",
+        d."managerId",
+        d."organizationId",
+        d."createdAt",
+        d."updatedAt",
+        u.number as "unitNumber",
+        u.price as "unitPrice",
+        p.name as "projectName"
       FROM "Deal" d
       JOIN "Unit" u ON d."unitId" = u.id
       JOIN "Block" b ON u."blockId" = b.id
       JOIN "Project" p ON b."projectId" = p.id
-      WHERE d."leadId" = ${id}
+      LEFT JOIN "DealClient" dc ON d.id = dc."dealId"
+      WHERE d."leadId" = ${id} OR dc."leadId" = ${id}
     `;
 
-    const dealsWithPayments = [];
+    let dealUnits: any[] = [];
+    if (deals.length > 0) {
+      const dealIds = deals.map(d => d.id);
+      dealUnits = await prisma.$queryRaw`
+        SELECT du.id, du."dealId", du."unitId", u.number as "unitNumber", u.price as "unitPrice", p.name as "projectName"
+        FROM "DealUnit" du
+        JOIN "Unit" u ON du."unitId" = u.id
+        JOIN "Block" b ON u."blockId" = b.id
+        JOIN "Project" p ON b."projectId" = p.id
+        WHERE du."dealId" IN (${Prisma.join(dealIds)}) AND du."isDeleted" = false
+      `;
+    }
+
+    const finalInterests = [...interests];
+
+    // For each deal
     for (const d of deals) {
+      // Primary unit
+      const primaryInInterests = finalInterests.some(i => i.unitId === d.unitId);
+      if (primaryInInterests) {
+        finalInterests.forEach(i => {
+          if (i.unitId === d.unitId) {
+            i.status = 'DEAL';
+          }
+        });
+      } else {
+        finalInterests.push({
+          id: `deal-interest-primary-${d.id}`,
+          leadId: id,
+          unitId: d.unitId,
+          status: 'DEAL',
+          createdAt: d.createdAt,
+          updatedAt: d.updatedAt,
+          number: d.unitNumber,
+          price: d.unitPrice,
+          projectName: d.projectName
+        });
+      }
+
+      // Additional units
+      const addUnits = dealUnits.filter(du => du.dealId === d.id);
+      for (const du of addUnits) {
+        const extraInInterests = finalInterests.some(i => i.unitId === du.unitId);
+        if (extraInInterests) {
+          finalInterests.forEach(i => {
+            if (i.unitId === du.unitId) {
+              i.status = 'DEAL';
+            }
+          });
+        } else {
+          finalInterests.push({
+            id: `deal-interest-extra-${du.id}`,
+            leadId: id,
+            unitId: du.unitId,
+            status: 'DEAL',
+            createdAt: d.createdAt,
+            updatedAt: d.updatedAt,
+            number: du.unitNumber,
+            price: du.unitPrice,
+            projectName: du.projectName
+          });
+        }
+      }
+    }
+
+    // Expose all deal entries (for primary and extra units)
+    const allDealEntries: any[] = [];
+    for (const d of deals) {
+      allDealEntries.push({
+        ...d,
+        isAdditional: false
+      });
+      const addUnits = dealUnits.filter(du => du.dealId === d.id);
+      for (const du of addUnits) {
+        allDealEntries.push({
+          ...d,
+          unitId: du.unitId,
+          unitNumber: du.unitNumber,
+          unitPrice: du.unitPrice,
+          projectName: du.projectName,
+          isAdditional: true
+        });
+      }
+    }
+
+    const dealsWithPayments = [];
+    for (const de of allDealEntries) {
       const payments: any[] = await prisma.$queryRaw`
-        SELECT * FROM "PaymentSchedule" WHERE "dealId" = ${d.id} ORDER BY "dueDate" ASC
+        SELECT * FROM "PaymentSchedule" WHERE "dealId" = ${de.id} ORDER BY "dueDate" ASC
       `;
       dealsWithPayments.push({
-        ...d,
+        ...de,
         payments
       });
     }
@@ -462,9 +692,18 @@ export async function getLeadById(id: string) {
 
     return {
       ...lead,
-      interests: interests.map(i => ({
+      interests: finalInterests.map(i => ({
         ...i,
-        unit: { number: i.number, price: i.price, block: { project: { name: i.projectName } } }
+        unit: {
+          id: i.unitId,
+          number: i.number,
+          price: i.price,
+          block: {
+            project: {
+              name: i.projectName
+            }
+          }
+        }
       })),
       deals: dealsWithPayments,
       logs
@@ -605,7 +844,7 @@ export async function qualifyLead(leadId: string, data: {
       WHERE id = ${leadId}
     `;
     
-    revalidatePath('/leads');
+    revalidatePath('/clients');
     return { success: true };
   } catch (error) {
     console.error('qualifyLead error:', error);
@@ -695,7 +934,7 @@ export async function reassignLead(leadId: string, newManagerId: string, reason:
       WHERE id = ${leadId}
     `;
     
-    revalidatePath('/leads');
+    revalidatePath('/clients');
     return { success: true };
   } catch (error) {
     console.error('reassignLead error:', error);
@@ -787,7 +1026,15 @@ export async function bookScheduleSlot(data: {
       VALUES (${slotId}, ${data.leadId}, ${data.managerId}, ${data.date}::date, ${data.time}, 'BOOKED', ${lead[0].name}, ${lead[0].phone}, NOW(), NOW())
     `;
 
-    revalidatePath('/leads');
+    // Sync with Deal Status: set to CONSULTATION (Личная консультация)
+    await prisma.$executeRaw`
+      UPDATE "Deal"
+      SET "status" = 'CONSULTATION'::"DealStatus", "updatedAt" = NOW()
+      WHERE "leadId" = ${data.leadId} AND "status" NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')
+    `;
+
+    revalidatePath('/clients');
+    revalidatePath('/deals');
     return { success: true, slotId };
   } catch (error) {
     console.error('bookScheduleSlot error:', error);
@@ -802,7 +1049,7 @@ export async function cancelScheduleSlot(slotId: string, reason: string) {
       SET "status" = 'CANCELLED', "updatedAt" = NOW()
       WHERE "id" = ${slotId}
     `;
-    revalidatePath('/leads');
+    revalidatePath('/clients');
     return { success: true };
   } catch (error) {
     console.error('cancelScheduleSlot error:', error);
@@ -817,7 +1064,7 @@ export async function completeScheduleSlot(slotId: string) {
       SET "status" = 'COMPLETED', "updatedAt" = NOW()
       WHERE "id" = ${slotId}
     `;
-    revalidatePath('/leads');
+    revalidatePath('/clients');
     return { success: true };
   } catch (error) {
     console.error('completeScheduleSlot error:', error);

@@ -175,7 +175,7 @@
 }
 
 .statMini .statLabel {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: #94a3b8;
   margin-top: 2px;
@@ -212,7 +212,7 @@
 }
 
 .filterLabel {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 700;
   color: #94a3b8;
   text-transform: uppercase;
@@ -304,7 +304,7 @@
 }
 
 .gelPrice {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   color: #64748b;
   font-weight: 500;
   display: block;
@@ -372,7 +372,7 @@
   right: 6px;
   background: linear-gradient(135deg, #fbbf24, #f59e0b);
   color: #78350f;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 800;
   padding: 2px 6px;
   border-radius: 4px;
@@ -384,7 +384,7 @@
   right: 6px;
   background: rgba(239, 68, 68, 0.15);
   color: #dc2626;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 800;
   padding: 2px 6px;
   border-radius: 4px;
@@ -430,7 +430,7 @@
   display: inline-block;
   padding: 4px 10px;
   border-radius: 20px;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 700;
 }
 
@@ -474,7 +474,7 @@
 }
 
 .paramLabel {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   color: #94a3b8;
   font-weight: 600;
   text-transform: uppercase;
@@ -503,7 +503,7 @@
 }
 
 .calcLabel {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 700;
   color: #94a3b8;
   display: block;
@@ -552,14 +552,14 @@
 }
 
 .priceHistoryList h4 {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 800;
   color: #475569;
   margin-bottom: 8px;
 }
 
 .priceHistoryItem {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   padding: 6px 0;
   border-bottom: 1px solid #e2e8f0;
 }
@@ -673,7 +673,7 @@
 }
 
 .formField label {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   font-weight: 700;
   color: #64748b;
   text-transform: uppercase;
@@ -947,7 +947,7 @@
 }
 
 .fileDropZone .fileHint {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   color: #94a3b8;
   margin-top: 12px;
 }
@@ -980,7 +980,7 @@
 }
 
 .selectedFile .fileSize {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   color: #94a3b8;
 }
 
@@ -1011,7 +1011,7 @@
 }
 
 .formatExample h4 {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 800;
   color: #64748b;
   text-transform: uppercase;
@@ -1024,7 +1024,7 @@
 
 .exampleTable {
   width: 100%;
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   border-collapse: collapse;
 }
 
@@ -1048,7 +1048,7 @@
   background: none;
   border: none;
   color: #3b82f6;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-weight: 600;
   cursor: pointer;
   margin-top: 12px;
@@ -1128,7 +1128,7 @@
 
 .errorBox strong {
   color: #dc2626;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   display: block;
   margin-bottom: 8px;
 }
@@ -1139,7 +1139,7 @@
 }
 
 .errorBox li {
-  font-size: 0.78rem;
+  font-size: 0.7rem;
   color: #991b1b;
   margin: 4px 0;
 }
@@ -1202,4 +1202,76 @@
   outline: none;
   border-color: #3b82f6;
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+/* ─── Бронирование ─── */
+.bookingSection {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  background: #f8fafc;
+  padding: 16px;
+  border-radius: 16px;
+  margin-bottom: 20px;
+  border: 1px solid #e2e8f0;
+}
+
+.bookingLabel {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #64748b;
+  text-transform: uppercase;
+  margin-bottom: 6px;
+  display: block;
+}
+
+.bookingTypeTabs {
+  display: flex;
+  background: #e2e8f0;
+  padding: 4px;
+  border-radius: 10px;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.bookingTypeTab {
+  flex: 1;
+  padding: 10px 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-align: center;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: #64748b;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.bookingTypeTabActiveSoft {
+  background: #fef08a;
+  color: #854d0e;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.bookingTypeTabActiveHard {
+  background: #ffedd5;
+  color: #9a3412;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.bookingTypeTabActiveService {
+  background: #dbeafe;
+  color: #1e40af;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+}
+
+.durationBanner {
+  font-size: 0.85rem;
+  color: #475569;
+  font-weight: 600;
+  padding: 10px 12px;
+  background: #f1f5f9;
+  border-radius: 8px;
+  border: 1px dashed #cbd5e1;
 }

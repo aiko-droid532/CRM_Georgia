@@ -9,11 +9,12 @@ interface LeadModalProps {
   onSuccess: () => void;
   organizationId: string;
   onSelectExisting?: (id: string) => void;
+  onCreated?: (id: string, name: string, phone: string) => void;
 }
 
 type ClientType = 'RESIDENT_GE' | 'NON_RESIDENT' | 'LEGAL_ENTITY';
 
-const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationId, onSelectExisting }) => {
+const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationId, onSelectExisting, onCreated }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<{message: string, link?: string} | null>(null);
   const [formData, setFormData] = useState({
@@ -82,12 +83,17 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
     });
 
     if (res.success) {
-      onSuccess();
+      if (onCreated && res.client) {
+        // Если вызвано из сделки — передаём данные нового клиента обратно
+        onCreated(res.client.id, formData.name, formData.phone);
+      } else {
+        onSuccess();
+      }
       onClose();
     } else if (res.error === 'DUPLICATE') {
-      setError({ 
-        message: res.message || 'Такой клиент уже существует', 
-        link: res.existingClientId 
+      setError({
+        message: res.message || 'Такой клиент уже существует',
+        link: res.existingClientId
       });
     } else {
       setError({ message: 'Ошибка при создании клиента' });
@@ -119,8 +125,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
           <div className={styles.errorAlert}>
             <span>{error.message}</span>
             {error.link && (
-              <button 
-                className={styles.linkBtn} 
+              <button
+                className={styles.linkBtn}
                 onClick={() => onSelectExisting?.(error.link as string)}
               >
                 Перейти
@@ -152,8 +158,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
           {/* === ФИО === */}
           <div className={styles.group}>
             <label>Полное имя клиента</label>
-            <input 
-              type="text" required placeholder="ФИО" 
+            <input
+              type="text" required placeholder="ФИО"
               value={formData.name}
               onChange={(e) => setFormData({...formData, name: e.target.value})}
               className={validationErrors.name ? styles.inputError : ''}
@@ -164,8 +170,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
           {/* === Телефон === */}
           <div className={styles.group}>
             <label>Телефон</label>
-            <input 
-              type="tel" required placeholder="+995 или +7" 
+            <input
+              type="tel" required placeholder="+995 или +7"
               value={formData.phone}
               onChange={(e) => setFormData({...formData, phone: e.target.value})}
               className={validationErrors.phone ? styles.inputError : ''}
@@ -176,8 +182,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
           {/* === Email === */}
           <div className={styles.group}>
             <label>Email</label>
-            <input 
-              type="email" placeholder="example@mail.com" 
+            <input
+              type="email" placeholder="example@mail.com"
               value={formData.email}
               onChange={(e) => setFormData({...formData, email: e.target.value})}
             />
@@ -187,7 +193,7 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
           {formData.type === 'RESIDENT_GE' && (
             <div className={styles.group}>
               <label>Personal Number <span className={styles.required}>*</span></label>
-              <input 
+              <input
                 type="text" placeholder="11 цифр" maxLength={11}
                 value={formData.personalNumber}
                 onChange={(e) => {
@@ -210,8 +216,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
             <>
               <div className={styles.group}>
                 <label>Номер паспорта <span className={styles.required}>*</span></label>
-                <input 
-                  type="text" placeholder="AB1234567" 
+                <input
+                  type="text" placeholder="AB1234567"
                   value={formData.passportNumber}
                   onChange={(e) => setFormData({...formData, passportNumber: e.target.value})}
                   className={validationErrors.passportNumber ? styles.inputError : ''}
@@ -220,8 +226,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
               </div>
               <div className={styles.group}>
                 <label>Страна гражданства <span className={styles.required}>*</span></label>
-                <input 
-                  type="text" placeholder="Турция, Россия, Иран..." 
+                <input
+                  type="text" placeholder="Турция, Россия, Иран..."
                   value={formData.passportCountry}
                   onChange={(e) => setFormData({...formData, passportCountry: e.target.value})}
                   className={validationErrors.passportCountry ? styles.inputError : ''}
@@ -234,8 +240,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
           {formData.type === 'LEGAL_ENTITY' && (
             <div className={styles.group}>
               <label>ИНН / Identification Code</label>
-              <input 
-                type="text" placeholder="Код компании" 
+              <input
+                type="text" placeholder="Код компании"
                 value={formData.iin}
                 onChange={(e) => setFormData({...formData, iin: e.target.value})}
               />
@@ -245,7 +251,7 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
           {/* === Источник === */}
           <div className={styles.group}>
             <label>Источник обращения</label>
-            <select 
+            <select
               value={formData.source}
               onChange={(e) => setFormData({...formData, source: e.target.value})}
             >
@@ -262,10 +268,10 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
           <div className={styles.fullWidth}>
             <div className={styles.consentBlock}>
               <label className={styles.sectionLabel}>Согласие на обработку данных</label>
-              
+
               <label className={`${styles.checkboxLabel} ${validationErrors.consent ? styles.checkboxError : ''}`}>
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   checked={formData.consentToPdProcessing}
                   onChange={(e) => setFormData({...formData, consentToPdProcessing: e.target.checked})}
                 />
@@ -277,8 +283,8 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
               {validationErrors.consent && <span className={styles.fieldError}>{validationErrors.consent}</span>}
 
               <label className={styles.checkboxLabel}>
-                <input 
-                  type="checkbox" 
+                <input
+                  type="checkbox"
                   checked={formData.optInMarketing}
                   onChange={(e) => setFormData({...formData, optInMarketing: e.target.checked})}
                 />
@@ -288,12 +294,12 @@ const LeadModal: React.FC<LeadModalProps> = ({ onClose, onSuccess, organizationI
             </div>
           </div>
 
-          
+
         <div className={styles.fullWidth}>
           <div className={styles.group}>
             <label>Кодовое слово</label>
-            <input 
-              type="text" 
+            <input
+              type="text"
               placeholder="Секретное слово для идентификации по телефону"
               value={formData.codeWord}
               onChange={(e) => setFormData({...formData, codeWord: e.target.value})}

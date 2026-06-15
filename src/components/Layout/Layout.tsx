@@ -14,11 +14,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const navItems = [
     { name: 'Аналитика', path: '/', icon: '📊' },
-    { name: 'Лиды',      path: '/leads',    icon: '🗂️' },
-    { name: 'Клиенты', path: '/clients', icon: '👤' },
+    { name: 'Управление клиентами', path: '/clients', icon: '👤' },
     { name: 'Сделки', path: '/deals', icon: '🤝' },
     { name: 'Шахматка', path: '/shakhmatka', icon: '🧱' },
-    { name: 'Платежи', path: '/payments', icon: '💳' },
   ];
 
   return (

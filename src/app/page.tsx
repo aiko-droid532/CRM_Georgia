@@ -45,7 +45,7 @@ export default async function DashboardPage({
     try {
       const { payload } = await verifyToken(token);
       if (payload && typeof payload !== 'string') {
-        organizationId = (payload.app_metadata?.organization_id as string) || (payload.sub as string);
+        organizationId = ((payload as any).app_metadata?.organization_id as string) || (payload.sub as string);
       }
     } catch {}
   }
