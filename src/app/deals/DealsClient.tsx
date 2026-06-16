@@ -232,6 +232,7 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
     clearUndoTimer(toastId);
     setUndoActions(prev => prev.filter(t => t.id !== toastId));
 
+    // Откатываем визуально
     setDeals((prev: any[]) =>
       prev.map((d: any) => d.id === action.dealId ? {
         ...d,
@@ -240,6 +241,7 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
       } : d)
     );
 
+    // Откатываем в БД и после этого делаем refresh
     await updateDealStatus(action.dealId, action.fromStatus, action.fromPreviousStatus, true);
     router.refresh();
   };
@@ -324,8 +326,10 @@ const [customDeleteReason, setCustomDeleteReason] = useState('');
       alert(res.message || 'Ошибка при обновлении статуса сделки в БД!');
       setDeals(originalDeals);
     } else {
-      startUndoTimer(dealId, deal.clientName || 'Сделка', deal.status, targetStage, previousStatus);
-      router.refresh();
+      const fromStatus = deal.status;
+      startUndoTimer(dealId, deal.clientName || 'Сделка', fromStatus, targetStage, previousStatus);
+      // router.refresh() не вызываем здесь — он сбрасывает стейт тостов.
+      // Данные уже обновлены оптимистично через setDeals выше.
     }
   };
 
