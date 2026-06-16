@@ -143,16 +143,16 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
   const [deals, setDeals] = useState(initialDeals);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ CALL_GROUP: true });
   const [draggingDealStatus, setDraggingDealStatus] = useState<string | null>(null);
-  const [undoAction, setUndoAction] = useState<{
+  const [undoActions, setUndoActions] = useState<{
+    id: string;
     dealId: string;
     dealName: string;
     fromStatus: string;
     toStatus: string;
     fromPreviousStatus?: string;
     secondsLeft: number;
-  } | null>(null);
-  const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
-  const undoIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  }[]>([]);
+  const undoTimersRef = useRef<Record<string, { timer: NodeJS.Timeout; interval: NodeJS.Timeout }>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollAnimRef = useRef<number | null>(null);
 
@@ -194,46 +194,53 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
     }
   };
 
-  const clearUndoTimer = () => {
-    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
-    if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
-    undoTimerRef.current = null;
-    undoIntervalRef.current = null;
+  const clearUndoTimer = (toastId: string) => {
+    const t = undoTimersRef.current[toastId];
+    if (t) {
+      clearTimeout(t.timer);
+      clearInterval(t.interval);
+      delete undoTimersRef.current[toastId];
+    }
   };
 
   const startUndoTimer = (dealId: string, dealName: string, fromStatus: string, toStatus: string, fromPreviousStatus?: string) => {
-    clearUndoTimer();
-    setUndoAction({ dealId, dealName, fromStatus, toStatus, fromPreviousStatus, secondsLeft: 30 });
+    const toastId = crypto.randomUUID();
 
-    undoIntervalRef.current = setInterval(() => {
-      setUndoAction(prev => {
-        if (!prev) return null;
-        if (prev.secondsLeft <= 1) return null;
-        return { ...prev, secondsLeft: prev.secondsLeft - 1 };
-      });
+    // Добавляем новый тост сразу — без задержки
+    setUndoActions(prev => [{
+      id: toastId, dealId, dealName, fromStatus, toStatus, fromPreviousStatus, secondsLeft: 10
+    }, ...prev]);
+
+    const interval = setInterval(() => {
+      setUndoActions(prev => prev
+        .map(t => t.id === toastId ? { ...t, secondsLeft: t.secondsLeft - 1 } : t)
+        .filter(t => t.secondsLeft > 0)
+      );
     }, 1000);
 
-    undoTimerRef.current = setTimeout(() => {
-      setUndoAction(null);
-      clearUndoTimer();
-    }, 30000);
+    const timer = setTimeout(() => {
+      setUndoActions(prev => prev.filter(t => t.id !== toastId));
+      clearUndoTimer(toastId);
+    }, 10000);
+
+    undoTimersRef.current[toastId] = { timer, interval };
   };
 
-  const handleUndo = async () => {
-    if (!undoAction) return;
-    clearUndoTimer();
-    const { dealId, fromStatus, fromPreviousStatus } = undoAction;
-    setUndoAction(null);
+  const handleUndo = async (toastId: string) => {
+    const action = undoActions.find(t => t.id === toastId);
+    if (!action) return;
+    clearUndoTimer(toastId);
+    setUndoActions(prev => prev.filter(t => t.id !== toastId));
 
     setDeals((prev: any[]) =>
-      prev.map((d: any) => d.id === dealId ? {
+      prev.map((d: any) => d.id === action.dealId ? {
         ...d,
-        status: fromStatus,
-        previousStatus: fromPreviousStatus || null,
+        status: action.fromStatus,
+        previousStatus: action.fromPreviousStatus || null,
       } : d)
     );
 
-    await updateDealStatus(dealId, fromStatus, fromPreviousStatus, true);
+    await updateDealStatus(action.dealId, action.fromStatus, action.fromPreviousStatus, true);
     router.refresh();
   };
 
@@ -1128,66 +1135,81 @@ const handleSetPrimaryClient = async (leadId: string) => {
         </div>
       )}
 
-      {/* Тост отмены последнего действия */}
-      {undoAction && (
+      {/* Стопка тостов отмены */}
+      {undoActions.length > 0 && (
         <div style={{
           position: 'fixed',
           bottom: '32px',
           left: '50%',
           transform: 'translateX(-50%)',
-          background: '#1e293b',
-          color: 'white',
-          borderRadius: '12px',
-          padding: '14px 20px',
           display: 'flex',
-          alignItems: 'center',
-          gap: '14px',
-          boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+          flexDirection: 'column',
+          gap: '8px',
           zIndex: 9999,
-          minWidth: '340px',
-          animation: 'slideUp 0.3s ease',
+          alignItems: 'center',
         }}>
-          <div style={{ flex: 1, fontSize: '0.9rem' }}>
-            <strong>{undoAction.dealName}</strong>
-            <span style={{ color: '#94a3b8', marginLeft: '6px' }}>
-              → {STAGES.find(s => s.id === undoAction.toStatus)?.label}
-            </span>
-          </div>
-          <button
-            onClick={handleUndo}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              background: 'transparent',
-              border: '1px solid rgba(255,255,255,0.3)',
-              borderRadius: '8px',
-              color: 'white',
-              padding: '6px 12px',
-              cursor: 'pointer',
-              fontSize: '0.85rem',
-              fontWeight: 700,
-            }}
-          >
-            <svg width="20" height="20" viewBox="0 0 20 20">
-              <circle cx="10" cy="10" r="8" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2"/>
-              <circle
-                cx="10" cy="10" r="8"
-                fill="none"
-                stroke="#60a5fa"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeDasharray={`${2 * Math.PI * 8}`}
-                strokeDashoffset={`${2 * Math.PI * 8 * (1 - undoAction.secondsLeft / 30)}`}
-                transform="rotate(-90 10 10)"
-                style={{ transition: 'stroke-dashoffset 1s linear' }}
-              />
-              <text x="10" y="14" textAnchor="middle" fill="white" fontSize="7" fontWeight="bold">
-                {undoAction.secondsLeft}
-              </text>
-            </svg>
-            Отменить
-          </button>
+          {undoActions.map((action, index) => (
+            <div
+              key={action.id}
+              style={{
+                background: '#1e293b',
+                color: 'white',
+                borderRadius: '12px',
+                padding: '14px 20px',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '14px',
+                boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+                minWidth: '340px',
+                opacity: index === 0 ? 1 : 0.75,
+                transform: `scale(${1 - index * 0.03})`,
+                transition: 'all 0.3s ease',
+                animation: index === 0 ? 'slideUp 0.25s ease' : 'none',
+              }}
+            >
+              <div style={{ flex: 1, fontSize: '0.9rem' }}>
+                <strong>{action.dealName}</strong>
+                <span style={{ color: '#94a3b8', marginLeft: '6px' }}>
+                  → {STAGES.find(s => s.id === action.toStatus)?.label}
+                </span>
+              </div>
+              <button
+                onClick={() => handleUndo(action.id)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  background: 'transparent',
+                  border: '1px solid rgba(255,255,255,0.3)',
+                  borderRadius: '8px',
+                  color: 'white',
+                  padding: '6px 12px',
+                  cursor: 'pointer',
+                  fontSize: '0.85rem',
+                  fontWeight: 700,
+                }}
+              >
+                <svg width="20" height="20" viewBox="0 0 20 20">
+                  <circle cx="10" cy="10" r="8" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2"/>
+                  <circle
+                    cx="10" cy="10" r="8"
+                    fill="none"
+                    stroke="#60a5fa"
+                    strokeWidth="2"
+                    strokeLinecap="round"
+                    strokeDasharray={`${2 * Math.PI * 8}`}
+                    strokeDashoffset={`${2 * Math.PI * 8 * (1 - action.secondsLeft / 10)}`}
+                    transform="rotate(-90 10 10)"
+                    style={{ transition: 'stroke-dashoffset 1s linear' }}
+                  />
+                  <text x="10" y="14" textAnchor="middle" fill="white" fontSize="7" fontWeight="bold">
+                    {action.secondsLeft}
+                  </text>
+                </svg>
+                Отменить
+              </button>
+            </div>
+          ))}
         </div>
       )}
 
