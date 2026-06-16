@@ -143,6 +143,16 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
   const [deals, setDeals] = useState(initialDeals);
   const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ CALL_GROUP: true });
   const [draggingDealStatus, setDraggingDealStatus] = useState<string | null>(null);
+  const [undoAction, setUndoAction] = useState<{
+    dealId: string;
+    dealName: string;
+    fromStatus: string;
+    toStatus: string;
+    fromPreviousStatus?: string;
+    secondsLeft: number;
+  } | null>(null);
+  const undoTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const undoIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
   const scrollAnimRef = useRef<number | null>(null);
 
@@ -183,6 +193,50 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
       scrollAnimRef.current = null;
     }
   };
+
+  const clearUndoTimer = () => {
+    if (undoTimerRef.current) clearTimeout(undoTimerRef.current);
+    if (undoIntervalRef.current) clearInterval(undoIntervalRef.current);
+    undoTimerRef.current = null;
+    undoIntervalRef.current = null;
+  };
+
+  const startUndoTimer = (dealId: string, dealName: string, fromStatus: string, toStatus: string, fromPreviousStatus?: string) => {
+    clearUndoTimer();
+    setUndoAction({ dealId, dealName, fromStatus, toStatus, fromPreviousStatus, secondsLeft: 30 });
+
+    undoIntervalRef.current = setInterval(() => {
+      setUndoAction(prev => {
+        if (!prev) return null;
+        if (prev.secondsLeft <= 1) return null;
+        return { ...prev, secondsLeft: prev.secondsLeft - 1 };
+      });
+    }, 1000);
+
+    undoTimerRef.current = setTimeout(() => {
+      setUndoAction(null);
+      clearUndoTimer();
+    }, 30000);
+  };
+
+  const handleUndo = async () => {
+    if (!undoAction) return;
+    clearUndoTimer();
+    const { dealId, fromStatus, fromPreviousStatus } = undoAction;
+    setUndoAction(null);
+
+    setDeals((prev: any[]) =>
+      prev.map((d: any) => d.id === dealId ? {
+        ...d,
+        status: fromStatus,
+        previousStatus: fromPreviousStatus || null,
+      } : d)
+    );
+
+    await updateDealStatus(dealId, fromStatus, fromPreviousStatus, true);
+    router.refresh();
+  };
+
   const [selectedDeal, setSelectedDeal] = useState<any | null>(null);
 
   // Поля для редактирования ипотеки в модалке
@@ -263,6 +317,7 @@ const [customDeleteReason, setCustomDeleteReason] = useState('');
       alert(res.message || 'Ошибка при обновлении статуса сделки в БД!');
       setDeals(originalDeals);
     } else {
+      startUndoTimer(dealId, deal.clientName || 'Сделка', deal.status, targetStage, previousStatus);
       router.refresh();
     }
   };
@@ -1072,6 +1127,70 @@ const handleSetPrimaryClient = async (leadId: string) => {
           </div>
         </div>
       )}
+
+      {/* Тост отмены последнего действия */}
+      {undoAction && (
+        <div style={{
+          position: 'fixed',
+          bottom: '32px',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          background: '#1e293b',
+          color: 'white',
+          borderRadius: '12px',
+          padding: '14px 20px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '14px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+          zIndex: 9999,
+          minWidth: '340px',
+          animation: 'slideUp 0.3s ease',
+        }}>
+          <div style={{ flex: 1, fontSize: '0.9rem' }}>
+            <strong>{undoAction.dealName}</strong>
+            <span style={{ color: '#94a3b8', marginLeft: '6px' }}>
+              → {STAGES.find(s => s.id === undoAction.toStatus)?.label}
+            </span>
+          </div>
+          <button
+            onClick={handleUndo}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '8px',
+              background: 'transparent',
+              border: '1px solid rgba(255,255,255,0.3)',
+              borderRadius: '8px',
+              color: 'white',
+              padding: '6px 12px',
+              cursor: 'pointer',
+              fontSize: '0.85rem',
+              fontWeight: 700,
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 20 20">
+              <circle cx="10" cy="10" r="8" fill="none" stroke="rgba(255,255,255,0.2)" strokeWidth="2"/>
+              <circle
+                cx="10" cy="10" r="8"
+                fill="none"
+                stroke="#60a5fa"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeDasharray={`${2 * Math.PI * 8}`}
+                strokeDashoffset={`${2 * Math.PI * 8 * (1 - undoAction.secondsLeft / 30)}`}
+                transform="rotate(-90 10 10)"
+                style={{ transition: 'stroke-dashoffset 1s linear' }}
+              />
+              <text x="10" y="14" textAnchor="middle" fill="white" fontSize="7" fontWeight="bold">
+                {undoAction.secondsLeft}
+              </text>
+            </svg>
+            Отменить
+          </button>
+        </div>
+      )}
+
     </div>
   );
 }
