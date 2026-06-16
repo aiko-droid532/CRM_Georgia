@@ -204,7 +204,7 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
   };
 
   const startUndoTimer = (dealId: string, dealName: string, fromStatus: string, toStatus: string, fromPreviousStatus?: string) => {
-    const toastId = crypto.randomUUID();
+    const toastId = `undo-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
     // Добавляем новый тост сразу — без задержки
     setUndoActions(prev => [{
@@ -536,7 +536,6 @@ const handleSetPrimaryClient = async (leadId: string) => {
         ref={scrollContainerRef}
         onDragOver={(e) => { e.preventDefault(); startAutoScroll(e.clientX); }}
         onDragLeave={stopAutoScroll}
-        onDrop={stopAutoScroll}
       >
         <div className={styles.kanbanBoardInner}>
         <div className={styles.kanbanBoardVertical}>
