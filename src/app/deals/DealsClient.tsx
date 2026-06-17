@@ -1164,10 +1164,10 @@ const handleSetPrimaryClient = async (leadId: string) => {
                 gap: '14px',
                 boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
                 minWidth: '340px',
-                opacity: index === 0 ? 1 : 0.75,
-                transform: `scale(${1 - index * 0.03})`,
+                opacity: 1,
+                transform: 'scale(1)',
                 transition: 'all 0.3s ease',
-                animation: index === 0 ? 'slideUp 0.25s ease' : 'none',
+                animation: index === undoActions.length - 1 ? 'slideUp 0.25s ease' : 'none',
               }}
             >
               <div style={{ flex: 1, fontSize: '0.9rem' }}>
@@ -1205,7 +1205,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
                     transform="rotate(-90 10 10)"
                     style={{ transition: 'stroke-dashoffset 1s linear' }}
                   />
-                  <text x="10" y="14" textAnchor="middle" fill="white" fontSize="7" fontWeight="bold">
+                  <text x="10" y="10" textAnchor="middle" dominantBaseline="central" fill="white" fontSize="7" fontWeight="bold">
                     {action.secondsLeft}
                   </text>
                 </svg>
