@@ -13,11 +13,14 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const pathname = usePathname();
 
   const navItems = [
-    { name: 'Аналитика', path: '/', icon: '📊' },
+    { name: 'Аналитика', path: '/', icon: '📈' },
     { name: 'Управление клиентами', path: '/clients', icon: '👤' },
     { name: 'Сделки', path: '/deals', icon: '🤝' },
     { name: 'Шахматка', path: '/shakhmatka', icon: '🧱' },
+    { name: 'Финансы', path: '/finance', icon: '💸' },
+    { name: 'Отчеты', path: '/reports', icon: '📊' },
   ];
+
 
   return (
     <div className={styles.container}>

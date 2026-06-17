@@ -19,6 +19,7 @@ export async function createClient(formData: {
   consentToPdProcessing?: boolean;
   optInMarketing?: boolean;
   codeWord?: string;
+  isVip?: boolean;
 }) {
   try {
     const existingByPhone: any[] = await prisma.$queryRaw`
@@ -82,7 +83,7 @@ export async function createClient(formData: {
         "organizationId", "createdById", "status", "callAttempts", "managerId",
         "type", "personalNumber", "passportNumber", "passportCountry",
         "consentToPdProcessing", "optInMarketing", "consentToPd",
-        "codeWord", "updatedAt"
+        "codeWord", "isVip", "updatedAt"
       ) VALUES (
         ${clientId}, ${formData.name}, ${formData.phone}, ${formData.email || null}, 
         ${formData.iin || null}, ${formData.managerNotes || null}, ${formData.source || null}, 
@@ -91,7 +92,7 @@ export async function createClient(formData: {
         ${formData.passportNumber || null}, ${formData.passportCountry || null},
         ${formData.consentToPdProcessing || false}, ${formData.optInMarketing || false},
         ${formData.consentToPdProcessing || false},
-        ${formData.codeWord || null},
+        ${formData.codeWord || null}, ${formData.isVip || false},
         NOW()
       )
     `;
@@ -494,6 +495,7 @@ export async function updateClient(data: {
   iin?: string;
   managerNotes?: string;
   managerId: string;
+  isVip?: boolean;
 }) {
   try {
     const currentList: any[] = await prisma.$queryRaw`
@@ -519,6 +521,10 @@ export async function updateClient(data: {
     }
     if (data.managerNotes !== undefined && data.managerNotes !== current.managerNotes) {
       updates.push(Prisma.sql`"managerNotes" = ${data.managerNotes}`);
+    }
+    if (data.isVip !== undefined && data.isVip !== current.isVip) {
+      updates.push(Prisma.sql`"isVip" = ${data.isVip}`);
+      logs.push({ field: 'isVip', old: current.isVip ? 'VIP' : 'Обычный', new: data.isVip ? 'VIP' : 'Обычный' });
     }
 
     if (updates.length === 0) return { success: true };
@@ -775,6 +781,106 @@ export async function savePaymentScheduleAction(data: {
   } catch (error) {
     console.error('savePaymentScheduleAction SQL error:', error);
     return { success: false, error: 'SERVER_ERROR' };
+  }
+}
+
+// Подтверждение платежа по графику
+export async function recordPaymentAction(data: {
+  paymentScheduleId: string;
+  organizationId: string;
+}) {
+  try {
+    // 1. Находим платеж по графику
+    const schedules: any[] = await prisma.$queryRaw`
+      SELECT * FROM "PaymentSchedule" 
+      WHERE id = ${data.paymentScheduleId} AND "organizationId" = ${data.organizationId} 
+      LIMIT 1
+    `;
+
+    if (schedules.length === 0) {
+      return { success: false, error: 'NOT_FOUND', message: 'Платеж по графику не найден.' };
+    }
+
+    const schedule = schedules[0];
+    if (schedule.status === 'PAID') {
+      return { success: false, error: 'ALREADY_PAID', message: 'Этот платеж уже подтвержден.' };
+    }
+
+    // 2. Меняем статус платежа на PAID
+    await prisma.$executeRaw`
+      UPDATE "PaymentSchedule" 
+      SET status = 'PAID'::"PaymentStatus", "updatedAt" = NOW() 
+      WHERE id = ${data.paymentScheduleId}
+    `;
+
+    // 3. Создаем запись транзакции в Transaction
+    const transactionId = crypto.randomUUID();
+    await prisma.$executeRaw`
+      INSERT INTO "Transaction" ("id", "amount", "date", "paymentScheduleId", "organizationId", "createdAt")
+      VALUES (${transactionId}, ${schedule.amount}, NOW(), ${data.paymentScheduleId}, ${data.organizationId}, NOW())
+    `;
+
+    // 4. Продвигаем сделку и квартиру по воронке при поступлении оплаты
+    const allSchedules: any[] = await prisma.$queryRaw`
+      SELECT id, status FROM "PaymentSchedule" WHERE "dealId" = ${schedule.dealId}
+    `;
+    const unpaidSchedules = allSchedules.filter((p: any) => p.status !== 'PAID');
+    const paidSchedules = allSchedules.filter((p: any) => p.status === 'PAID');
+
+    const deals: any[] = await prisma.$queryRaw`
+      SELECT id, status, "unitId" FROM "Deal" WHERE id = ${schedule.dealId} LIMIT 1
+    `;
+    if (deals.length > 0) {
+      const deal = deals[0];
+      if (unpaidSchedules.length === 0) {
+        // Последний платеж (все оплачено) -> Успех и Продано
+        await prisma.$executeRaw`
+          UPDATE "Deal" 
+          SET status = 'SUCCESS'::"DealStatus", "updatedAt" = NOW() 
+          WHERE id = ${deal.id}
+        `;
+        if (deal.unitId) {
+          await prisma.$executeRaw`
+            UPDATE "Unit" 
+            SET status = 'SOLD'::"UnitStatus", "updatedAt" = NOW() 
+            WHERE id = ${deal.unitId}
+          `;
+        }
+      } else if (paidSchedules.length === 1) {
+        // Первый платеж -> Оплата подтверждена и Первый взнос внесен
+        await prisma.$executeRaw`
+          UPDATE "Deal" 
+          SET status = 'PAYMENT_CONFIRMED'::"DealStatus", "updatedAt" = NOW() 
+          WHERE id = ${deal.id}
+        `;
+        if (deal.unitId) {
+          await prisma.$executeRaw`
+            UPDATE "Unit" 
+            SET status = 'DOWN_PAYMENT_RECEIVED'::"UnitStatus", "updatedAt" = NOW() 
+            WHERE id = ${deal.unitId}
+          `;
+        }
+      } else {
+        // Промежуточный платеж -> проверяем, чтобы статус сделки был не ниже PAYMENT_CONFIRMED
+        if (['RESERVATION', 'WAITING_PAYMENT', 'CONTRACT', 'CLIENT_CONFIRMATION', 'NEW_LEAD', 'CLARIFICATION'].includes(deal.status)) {
+          await prisma.$executeRaw`
+            UPDATE "Deal" 
+            SET status = 'PAYMENT_CONFIRMED'::"DealStatus", "updatedAt" = NOW() 
+            WHERE id = ${deal.id}
+          `;
+        }
+      }
+    }
+
+    revalidatePath('/clients');
+    revalidatePath('/deals');
+    revalidatePath('/shakhmatka');
+    revalidatePath('/');
+
+    return { success: true };
+  } catch (error) {
+    console.error('recordPaymentAction error:', error);
+    return { success: false, error: 'SERVER_ERROR', message: 'Ошибка сервера при регистрации оплаты.' };
   }
 }
 

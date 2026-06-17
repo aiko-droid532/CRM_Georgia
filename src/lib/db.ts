@@ -33,9 +33,20 @@ export function sql(strings: TemplateStringsArray, ...values: any[]) {
       // Prisma.join handling
       if (values[i] && values[i].isPrismaJoin) {
         const joinValues = values[i].values;
-        const paramPlaceholders = joinValues.map((_: any, idx: number) => {
-          params.push(joinValues[idx]);
-          return `$${params.length}`;
+        const paramPlaceholders = joinValues.map((val: any) => {
+          if (val && val.isPrismaSql) {
+            const nestedText = val.text;
+            const nestedParams = val.params;
+            let localNestedText = nestedText;
+            nestedParams.forEach((param: any, idx: number) => {
+              params.push(param);
+              localNestedText = localNestedText.replace(`$${idx + 1}`, `$${params.length}`);
+            });
+            return localNestedText;
+          } else {
+            params.push(val);
+            return `$${params.length}`;
+          }
         });
         text += paramPlaceholders.join(values[i].separator);
       } 
@@ -49,9 +60,9 @@ export function sql(strings: TemplateStringsArray, ...values: any[]) {
         const nestedParams = values[i].params;
         // replace $1, $2 in nestedText with current param index
         let localNestedText = nestedText;
-        nestedParams.forEach((param: any) => {
+        nestedParams.forEach((param: any, idx: number) => {
           params.push(param);
-          localNestedText = localNestedText.replace(/\$\d+/, `$${params.length}`);
+          localNestedText = localNestedText.replace(`$${idx + 1}`, `$${params.length}`);
         });
         text += localNestedText;
       }

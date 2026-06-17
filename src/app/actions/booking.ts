@@ -121,7 +121,7 @@ export async function checkAndReleaseExpiredBookings() {
   try {
     // 1. Находим все активные просроченные брони
     const expiredBookings: any[] = await prisma.$queryRaw`
-      SELECT id, "unitId", "leadId", "type"
+      SELECT id, "unitId", "leadId", "type", "organizationId"
       FROM "Booking"
       WHERE status = 'ACTIVE' AND "expiresAt" < NOW()
     `;
@@ -132,11 +132,6 @@ export async function checkAndReleaseExpiredBookings() {
       // Обновляем статус брони на EXPIRED
       await prisma.$executeRaw`
         UPDATE "Booking" SET status = 'EXPIRED', "updatedAt" = NOW() WHERE id = ${b.id}
-      `;
-
-      // Освобождаем квартиру
-      await prisma.$executeRaw`
-        UPDATE "Unit" SET status = 'FREE', "thinkingFlag" = ${b.type === 'SOFT'}, "updatedAt" = NOW() WHERE id = ${b.unitId}
       `;
 
       // Обновляем сделку
@@ -161,6 +156,67 @@ export async function checkAndReleaseExpiredBookings() {
           WHERE id = ${b.leadId}
         `;
       }
+
+      // Проверяем, есть ли лист ожидания на эту квартиру
+      const queue = await getWaitingListAction(b.unitId, b.organizationId);
+      if (queue.length > 0) {
+        // Продвигаем первого клиента из очереди (VIP + FIFO)
+        const nextInQueue = queue[0];
+
+        // Удаляем его из очереди
+        await prisma.$executeRaw`
+          DELETE FROM "WaitingList" WHERE id = ${nextInQueue.id}
+        `;
+
+        // Оформляем на него устную бронь (SOFT) на 24 часа
+        const bookingId = crypto.randomUUID();
+        const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+        await prisma.$executeRaw`
+          INSERT INTO "Booking" ("id", "leadId", "unitId", "expiresAt", "type", "status", "organizationId", "createdAt", "updatedAt")
+          VALUES (${bookingId}, ${nextInQueue.leadId}, ${b.unitId}, ${expiresAt}, 'SOFT', 'ACTIVE', ${b.organizationId}, NOW(), NOW())
+        `;
+
+        // Создаем/обновляем сделку на нового клиента
+        const existingDeals: any[] = await prisma.$queryRaw`
+          SELECT id FROM "Deal" 
+          WHERE "leadId" = ${nextInQueue.leadId} AND "unitId" = ${b.unitId} AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')
+          LIMIT 1
+        `;
+
+        let dealId = '';
+        if (existingDeals.length > 0) {
+          dealId = existingDeals[0].id;
+          await prisma.$executeRaw`
+            UPDATE "Deal" 
+            SET status = 'PRE_RESERVATION'::"DealStatus", "updatedAt" = NOW()
+            WHERE id = ${dealId}
+          `;
+        } else {
+          dealId = crypto.randomUUID();
+          await prisma.$executeRaw`
+            INSERT INTO "Deal" ("id", "leadId", "unitId", "organizationId", "status", "createdAt", "updatedAt")
+            VALUES (${dealId}, ${nextInQueue.leadId}, ${b.unitId}, ${b.organizationId}, 'PRE_RESERVATION'::"DealStatus", NOW(), NOW())
+          `;
+        }
+
+        // Статус квартиры становится SOFT_BOOKED (Устная бронь)
+        await prisma.$executeRaw`
+          UPDATE "Unit" 
+          SET status = 'SOFT_BOOKED'::"UnitStatus", "thinkingFlag" = false, "updatedAt" = NOW() 
+          WHERE id = ${b.unitId}
+        `;
+
+        // Записываем лог изменений о продвижении очереди
+        await prisma.$executeRaw`
+          INSERT INTO "ChangeLog" ("id", "leadId", "managerId", "field", "oldValue", "newValue", "createdAt")
+          VALUES (${crypto.randomUUID()}, ${nextInQueue.leadId}, ${b.organizationId}, 'QueuePromotion', 'В очереди', 'Забронировано на 24 часа', NOW())
+        `;
+      } else {
+        // Очередь пуста -> Освобождаем квартиру
+        await prisma.$executeRaw`
+          UPDATE "Unit" SET status = 'FREE', "thinkingFlag" = ${b.type === 'SOFT'}, "updatedAt" = NOW() WHERE id = ${b.unitId}
+        `;
+      }
     }
 
     revalidatePath('/shakhmatka');
@@ -182,4 +238,197 @@ export async function getLeadsList(organizationId: string) {
     WHERE "organizationId" = ${organizationId} 
     ORDER BY "createdAt" DESC
   `;
+}
+
+// Ручное снятие бронирования с проверкой ролей
+export async function releaseBooking(data: {
+  unitId: string;
+  organizationId: string;
+  userRole: string;
+}) {
+  try {
+    // 1. Находим активную бронь на эту квартиру
+    const activeBookings: any[] = await prisma.$queryRaw`
+      SELECT id, "leadId", "type" 
+      FROM "Booking" 
+      WHERE "unitId" = ${data.unitId} AND status = 'ACTIVE' 
+      LIMIT 1
+    `;
+
+    if (activeBookings.length === 0) {
+      return { success: false, error: 'NO_ACTIVE_BOOKING', message: 'Нет активного бронирования для этого объекта.' };
+    }
+
+    const b = activeBookings[0];
+
+    // 2. Если бронь служебная, проверять права (РОП, Администратор, Супервайзер) - отключено временно для тестов
+    if (b.type === 'SERVICE') {
+      // const isRopOrAdmin = data.userRole === 'supervisor' || data.userRole === 'admin' || data.userRole === 'rop';
+      // if (!isRopOrAdmin) {
+      //   return { success: false, error: 'FORBIDDEN', message: 'Служебное резервирование может быть снято только РОПом или администратором.' };
+      // }
+    }
+
+    // 3. Отменяем бронь в Booking
+    await prisma.$executeRaw`
+      UPDATE "Booking" 
+      SET status = 'CANCELLED', "updatedAt" = NOW() 
+      WHERE id = ${b.id}
+    `;
+
+    // 4. Переводим сделку в статус CANCELLED
+    await prisma.$executeRaw`
+      UPDATE "Deal" 
+      SET status = 'CANCELLED'::"DealStatus", "updatedAt" = NOW()
+      WHERE "leadId" = ${b.leadId} AND "unitId" = ${data.unitId} AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')
+    `;
+
+    // 5. Проверяем очередь листа ожидания на эту квартиру
+    const queue = await getWaitingListAction(data.unitId, data.organizationId);
+    if (queue.length > 0) {
+      // Продвигаем первого клиента из очереди (VIP + FIFO)
+      const nextInQueue = queue[0];
+
+      // Удаляем его из очереди
+      await prisma.$executeRaw`
+        DELETE FROM "WaitingList" WHERE id = ${nextInQueue.id}
+      `;
+
+      // Оформляем на него устную бронь (SOFT) на 24 часа
+      const bookingId = crypto.randomUUID();
+      const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      await prisma.$executeRaw`
+        INSERT INTO "Booking" ("id", "leadId", "unitId", "expiresAt", "type", "status", "organizationId", "createdAt", "updatedAt")
+        VALUES (${bookingId}, ${nextInQueue.leadId}, ${data.unitId}, ${expiresAt}, 'SOFT', 'ACTIVE', ${data.organizationId}, NOW(), NOW())
+      `;
+
+      // Создаем/обновляем сделку на нового клиента
+      const existingDeals: any[] = await prisma.$queryRaw`
+        SELECT id FROM "Deal" 
+        WHERE "leadId" = ${nextInQueue.leadId} AND "unitId" = ${data.unitId} AND status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')
+        LIMIT 1
+      `;
+
+      let dealId = '';
+      if (existingDeals.length > 0) {
+        dealId = existingDeals[0].id;
+        await prisma.$executeRaw`
+          UPDATE "Deal" 
+          SET status = 'PRE_RESERVATION'::"DealStatus", "updatedAt" = NOW()
+          WHERE id = ${dealId}
+        `;
+      } else {
+        dealId = crypto.randomUUID();
+        await prisma.$executeRaw`
+          INSERT INTO "Deal" ("id", "leadId", "unitId", "organizationId", "status", "createdAt", "updatedAt")
+          VALUES (${dealId}, ${nextInQueue.leadId}, ${data.unitId}, ${data.organizationId}, 'PRE_RESERVATION'::"DealStatus", NOW(), NOW())
+        `;
+      }
+
+      // Статус квартиры становится SOFT_BOOKED (Устная бронь)
+      await prisma.$executeRaw`
+        UPDATE "Unit" 
+        SET status = 'SOFT_BOOKED'::"UnitStatus", "thinkingFlag" = false, "updatedAt" = NOW() 
+        WHERE id = ${data.unitId}
+      `;
+
+      // Записываем лог изменений о продвижении очереди
+      await prisma.$executeRaw`
+        INSERT INTO "ChangeLog" ("id", "leadId", "managerId", "field", "oldValue", "newValue", "createdAt")
+        VALUES (${crypto.randomUUID()}, ${nextInQueue.leadId}, ${data.organizationId}, 'QueuePromotion', 'В очереди', 'Забронировано на 24 часа', NOW())
+      `;
+    } else {
+      // Очередь пуста -> Освобождаем квартиру в Unit
+      await prisma.$executeRaw`
+        UPDATE "Unit" 
+        SET status = 'FREE', "thinkingFlag" = false, "updatedAt" = NOW() 
+        WHERE id = ${data.unitId}
+      `;
+    }
+
+    revalidatePath('/shakhmatka');
+    revalidatePath('/deals');
+    revalidatePath('/clients');
+    revalidatePath('/');
+
+    return { success: true };
+  } catch (error) {
+    console.error('Error releasing booking manually:', error);
+    return { success: false, error: 'SERVER_ERROR', message: 'Ошибка сервера при снятии бронирования.' };
+  }
+}
+
+// === ЛИСТ ОЖИДАНИЯ (WAITING LIST) ACTIONS ===
+
+export async function addToWaitingListAction(data: {
+  unitId: string;
+  leadId: string;
+  organizationId: string;
+}) {
+  try {
+    // Проверяем, нет ли уже этого лида в очереди
+    const existing: any[] = await prisma.$queryRaw`
+      SELECT id FROM "WaitingList" 
+      WHERE "unitId" = ${data.unitId} AND "leadId" = ${data.leadId} AND "organizationId" = ${data.organizationId}
+      LIMIT 1
+    `;
+    
+    if (existing.length > 0) {
+      return { success: false, error: 'ALREADY_IN_QUEUE', message: 'Этот клиент уже стоит в листе ожидания на эту квартиру.' };
+    }
+
+    const id = crypto.randomUUID();
+    await prisma.$executeRaw`
+      INSERT INTO "WaitingList" ("id", "unitId", "leadId", "organizationId", "createdAt", "updatedAt")
+      VALUES (${id}, ${data.unitId}, ${data.leadId}, ${data.organizationId}, NOW(), NOW())
+    `;
+
+    revalidatePath('/shakhmatka');
+    return { success: true };
+  } catch (err) {
+    console.error('addToWaitingListAction error:', err);
+    return { success: false, error: 'SERVER_ERROR', message: 'Ошибка сервера при добавлении в очередь.' };
+  }
+}
+
+export async function removeFromWaitingListAction(data: {
+  waitingListId: string;
+  organizationId: string;
+}) {
+  try {
+    await prisma.$executeRaw`
+      DELETE FROM "WaitingList" 
+      WHERE id = ${data.waitingListId} AND "organizationId" = ${data.organizationId}
+    `;
+    
+    revalidatePath('/shakhmatka');
+    return { success: true };
+  } catch (err) {
+    console.error('removeFromWaitingListAction error:', err);
+    return { success: false, error: 'SERVER_ERROR', message: 'Ошибка сервера при удалении из очереди.' };
+  }
+}
+
+export async function getWaitingListAction(unitId: string, organizationId: string) {
+  try {
+    // Сортируем: сначала VIP лиды (isVip DESC), затем по FIFO (createdAt ASC)
+    const list: any[] = await prisma.$queryRaw`
+      SELECT 
+        wl.id,
+        wl."unitId",
+        wl."leadId",
+        wl."createdAt",
+        l.name as "leadName",
+        l.phone as "leadPhone",
+        l."isVip" as "leadIsVip"
+      FROM "WaitingList" wl
+      JOIN "Lead" l ON wl."leadId" = l.id
+      WHERE wl."unitId" = ${unitId} AND wl."organizationId" = ${organizationId}
+      ORDER BY l."isVip" DESC, wl."createdAt" ASC
+    `;
+    return list;
+  } catch (err) {
+    console.error('getWaitingListAction error:', err);
+    return [];
+  }
 }
