@@ -16,7 +16,34 @@ export async function getProjects(organizationId: string) {
             'projectId', b."projectId",
             'organizationId', b."organizationId",
             'units', (
-              SELECT COALESCE(json_agg(u ORDER BY u.floor DESC, u.number ASC), '[]'::json)
+              SELECT COALESCE(
+                json_agg(
+                  json_build_object(
+                    'id', u.id,
+                    'number', u.number,
+                    'floor', u.floor,
+                    'area', u.area,
+                    'price', u.price,
+                    'status', u.status,
+                    'blockId', u."blockId",
+                    'organizationId', u."organizationId",
+                    'rooms', u.rooms,
+                    'type', u.type,
+                    'livingArea', u."livingArea",
+                    'viewType', u."viewType",
+                    'version', u.version,
+                    'isVip', u."isVip",
+                    'thinkingFlag', u."thinkingFlag",
+                    'bookingExpiresAt', (
+                      SELECT bk."expiresAt" 
+                      FROM "Booking" bk 
+                      WHERE bk."unitId" = u.id AND bk.status = 'ACTIVE' 
+                      LIMIT 1
+                    )
+                  ) ORDER BY u.floor DESC, u.number ASC
+                ),
+                '[]'::json
+              )
               FROM "Unit" u WHERE u."blockId" = b.id
             )
           ) ORDER BY b.number ASC

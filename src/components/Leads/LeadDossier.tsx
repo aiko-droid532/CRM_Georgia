@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import styles from './LeadDossier.module.css';
 import { searchUnits, addInterest } from '@/app/actions/inventory';
-import { createDeal, updateClient, getLeadById, savePaymentScheduleAction, anonymizeClient, logPhoneView, qualifyLead } from '@/app/actions/leads';
+import { createDeal, updateClient, getLeadById, savePaymentScheduleAction, recordPaymentAction, anonymizeClient, logPhoneView, qualifyLead } from '@/app/actions/leads';
 import { useRouter } from 'next/navigation';
 import { getExchangeRate } from '@/app/actions/exchange';
 
@@ -36,7 +36,8 @@ export default function LeadDossier({ lead: initialLead, projects = [], onClose,
   const [editData, setEditData] = useState({
     name: initialLead.name,
     phone: initialLead.phone,
-    iin: initialLead.iin || ''
+    iin: initialLead.iin || '',
+    isVip: initialLead.isVip || false
   });
 
   const [qualifyForm, setQualifyForm] = useState({
@@ -122,6 +123,12 @@ export default function LeadDossier({ lead: initialLead, projects = [], onClose,
       if (full) {
         setLead(full);
         if (full.managerNotes) setNoteText(full.managerNotes);
+        setEditData({
+          name: full.name,
+          phone: full.phone,
+          iin: full.iin || '',
+          isVip: full.isVip || false
+        });
         setQualifyForm({
           interestedProjectId: full.interestedProjectId || '',
           propertyType: full.propertyType || 'Apartment',
@@ -314,6 +321,8 @@ export default function LeadDossier({ lead: initialLead, projects = [], onClose,
       if (deal && deal.payments && deal.payments.length > 0) {
         const rate = parseFloat(exchangeRate || '1');
         const savedSchedule = deal.payments.map((p: any) => ({
+          id: p.id,
+          status: p.status,
           date: new Date(p.dueDate).toLocaleDateString(),
           amountUSD: p.amount,
           amountGEL: Math.round(p.amount * rate)
@@ -356,6 +365,26 @@ export default function LeadDossier({ lead: initialLead, projects = [], onClose,
       if (updated) setLead(updated);
     } else {
       alert('Ошибка при сохранении расчета: ' + (res.error || 'Неизвестная ошибка'));
+    }
+    setLoading(false);
+  };
+
+  const handleConfirmPayment = async (paymentScheduleId: string) => {
+    const confirmed = confirm('Вы подтверждаете получение оплаты по этому платежу?');
+    if (!confirmed) return;
+
+    setLoading(true);
+    const res = await recordPaymentAction({
+      paymentScheduleId,
+      organizationId
+    });
+
+    if (res.success) {
+      alert('✅ Оплата успешно зафиксирована!');
+      const updated = await getLeadById(lead.id);
+      if (updated) setLead(updated);
+    } else {
+      alert('❌ Ошибка: ' + (res.message || 'Не удалось провести платеж.'));
     }
     setLoading(false);
   };
@@ -421,6 +450,32 @@ export default function LeadDossier({ lead: initialLead, projects = [], onClose,
                     <label>ФИО Клиента</label>
                     {isEditing ? <input className={styles.editInput} value={editData.name} onChange={e => setEditData({...editData, name: e.target.value})} /> : <p className={styles.val}>{lead.name}</p>}
                   </div>
+                  {isClient && (
+                    <div className={styles.field}>
+                      <label>VIP Статус</label>
+                      {isEditing ? (
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', marginTop: '6px' }}>
+                          <input 
+                            type="checkbox" 
+                            checked={editData.isVip} 
+                            onChange={e => setEditData({...editData, isVip: e.target.checked})} 
+                            style={{ width: '16px', height: '16px', cursor: 'pointer' }}
+                          />
+                          <span style={{ fontWeight: 600, color: '#b45309', fontSize: '0.9rem' }}>⭐ VIP клиент</span>
+                        </label>
+                      ) : (
+                        <div style={{ marginTop: '4px' }}>
+                          {lead.isVip ? (
+                            <span style={{ background: '#fef3c7', color: '#b45309', padding: '4px 8px', borderRadius: '6px', fontWeight: 'bold', fontSize: '0.8rem', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                              ⭐ VIP клиент
+                            </span>
+                          ) : (
+                            <span style={{ color: '#64748b', fontSize: '0.9rem' }}>Обычный статус</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <div className={styles.field}>
                     <label>Контактный номер {isClient && '🔒'}</label>
                     {isEditing ? (
@@ -868,6 +923,8 @@ export default function LeadDossier({ lead: initialLead, projects = [], onClose,
                     <th>Дата</th>
                     <th>Сумма (USD)</th>
                     <th>Сумма (GEL)</th>
+                    <th>Статус</th>
+                    <th>Действие</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -877,6 +934,28 @@ export default function LeadDossier({ lead: initialLead, projects = [], onClose,
                       <td className={styles.dateCell}>{r.date}</td>
                       <td className={styles.usdCell}>${r.amountUSD.toLocaleString()}</td>
                       <td className={styles.gelCell}>{r.amountGEL.toLocaleString()} ₾</td>
+                      <td>
+                        {r.status === 'PAID' ? (
+                          <span className={styles.statusPaid}>Оплачен</span>
+                        ) : r.status === 'OVERDUE' ? (
+                          <span className={styles.statusOverdue}>Просрочен</span>
+                        ) : r.id ? (
+                          <span className={styles.statusPending}>Ожидание</span>
+                        ) : (
+                          <span className={styles.statusDraft}>Черновик</span>
+                        )}
+                      </td>
+                      <td>
+                        {r.id && r.status !== 'PAID' && (
+                          <button 
+                            className={styles.confirmPaymentBtn}
+                            onClick={() => handleConfirmPayment(r.id)}
+                            disabled={loading}
+                          >
+                            {loading ? '...' : 'Оплатить'}
+                          </button>
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -900,6 +979,8 @@ export default function LeadDossier({ lead: initialLead, projects = [], onClose,
                 if (interest) setSelectedInterestForCalc(interest);
                 const rate = parseFloat(exchangeRate || '2.70');
                 const savedSchedule = activeDeal.payments.map((p: any) => ({
+                  id: p.id,
+                  status: p.status,
                   date: new Date(p.dueDate).toLocaleDateString(),
                   amountUSD: p.amount,
                   amountGEL: Math.round(p.amount * rate)

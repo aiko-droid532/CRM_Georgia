@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import styles from './Shakhmatka.module.css';
 import { createDemoProject, massUpdatePrices, getPriceHistory, createUnit, updateUnit, deleteUnit, getBlocksForSelect } from '@/app/actions/units';
-import { createBooking } from '@/app/actions/booking';
+import { createBooking, releaseBooking, addToWaitingListAction, removeFromWaitingListAction, getWaitingListAction } from '@/app/actions/booking';
 import { getExchangeRate } from '@/app/actions/exchange';
 import { importUnitsFromExcel } from '@/app/actions/import';
 import { useRouter } from 'next/navigation';
@@ -17,6 +17,10 @@ interface ShakhmatkaClientProps {
 }
  
 export default function ShakhmatkaClient({ projects: initialProjects, leads, organizationId, userRole = 'manager' }: ShakhmatkaClientProps) {
+  const clients = useMemo(() => {
+    return leads.filter(l => l.status === 'CONVERTED' || (l.type && l.type !== 'LEAD'));
+  }, [leads]);
+
   // Данные и фильтры
   const [projects, setProjects] = useState(initialProjects);
   const [activeProjectId, setActiveProjectId] = useState(projects[0]?.id || null);
@@ -102,6 +106,43 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const [softDuration, setSoftDuration] = useState('1'); // hours
   const [hardDuration, setHardDuration] = useState('14'); // days
 
+  // Лист ожидания
+  const [waitingList, setWaitingList] = useState<any[]>([]);
+  const [wlLeadId, setWlLeadId] = useState('');
+  const [wlSubmitting, setWlSubmitting] = useState(false);
+
+  useEffect(() => {
+    async function loadWaitingList() {
+      if (selectedUnit) {
+        const list = await getWaitingListAction(selectedUnit.id, organizationId);
+        setWaitingList(list);
+      } else {
+        setWaitingList([]);
+      }
+    }
+    loadWaitingList();
+  }, [selectedUnit, organizationId]);
+
+  // Текущее время для обратного отсчета
+  const [now, setNow] = useState(Date.now());
+  useEffect(() => {
+    const interval = setInterval(() => setNow(Date.now()), 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const getRemainingTime = (expiresAtStr?: string) => {
+    if (!expiresAtStr) return '00:00';
+    const expiresAt = new Date(expiresAtStr).getTime();
+    const diffMs = expiresAt - now;
+    if (diffMs <= 0) return '00:00';
+    
+    const diffMinsTotal = Math.max(0, Math.floor(diffMs / 60000));
+    const hours = Math.floor(diffMinsTotal / 60);
+    const mins = diffMinsTotal % 60;
+    
+    return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
+  };
+
   // SSE (Real-time обновления)
   useEffect(() => {
     const eventSource = new EventSource('/api/stream');
@@ -143,7 +184,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     setSelectedUnit(unit);
     setPriceHistory([]);
     setDownPayment(Math.round(unit.price * 0.3));
-    if (leads.length > 0) setSelectedLeadId(leads[0].id);
+    if (clients.length > 0) setSelectedLeadId(clients[0].id);
     setBookingType('SOFT');
     setSoftDuration('1');
     setHardDuration('14');
@@ -401,6 +442,68 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     setLoading(false);
   };
 
+  // Снятие бронирования
+  const onReleaseBook = async () => {
+    const confirmed = confirm('Вы уверены, что хотите снять бронирование с этого объекта?');
+    if (!confirmed) return;
+
+    setLoading(true);
+    const res = await releaseBooking({
+      unitId: selectedUnit.id,
+      organizationId,
+      userRole
+    });
+
+    if (res.success) {
+      setSelectedUnit(null);
+      alert('Бронирование успешно снято.');
+      router.refresh();
+    } else {
+      alert('Ошибка: ' + (res.message || 'Не удалось снять бронирование.'));
+    }
+    setLoading(false);
+  };
+
+  const handleAddToQueue = async () => {
+    if (!selectedUnit || !wlLeadId) return;
+    setWlSubmitting(true);
+    const res = await addToWaitingListAction({
+      unitId: selectedUnit.id,
+      leadId: wlLeadId,
+      organizationId
+    });
+    setWlSubmitting(false);
+    if (res.success) {
+      setWlLeadId('');
+      // Reload queue
+      const list = await getWaitingListAction(selectedUnit.id, organizationId);
+      setWaitingList(list);
+    } else {
+      alert(res.message || 'Не удалось добавить в очередь.');
+    }
+  };
+
+  const handleRemoveFromQueue = async (waitingListId: string) => {
+    const confirmed = confirm('Вы уверены, что хотите убрать клиента из листа ожидания?');
+    if (!confirmed) return;
+    
+    setWlSubmitting(true);
+    const res = await removeFromWaitingListAction({
+      waitingListId,
+      organizationId
+    });
+    setWlSubmitting(false);
+    if (res.success) {
+      // Reload queue
+      if (selectedUnit) {
+        const list = await getWaitingListAction(selectedUnit.id, organizationId);
+        setWaitingList(list);
+      }
+    } else {
+      alert(res.message || 'Не удалось убрать из очереди.');
+    }
+  };
+
   // Helper: Получение стилей по статусу
   const getStatusClass = (status: string) => {
     switch (status) {
@@ -449,8 +552,28 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
 
   // Проверка фильтров
   const isFilteredOut = (unit: any) => {
-    if (statusFilter !== 'ALL' && unit.status !== statusFilter) return true;
-    if (roomsFilter !== 'ALL' && unit.rooms?.toString() !== roomsFilter) return true;
+    if (statusFilter !== 'ALL') {
+      if (statusFilter === 'SOFT') {
+        if (unit.status !== 'SOFT_BOOKED' && unit.status !== 'RESERVATION_ORAL') return true;
+      } else if (statusFilter === 'HARD') {
+        if (unit.status !== 'HARD_BOOKED' && unit.status !== 'RESERVATION_PAID') return true;
+      } else if (statusFilter === 'SOLD') {
+        if (unit.status !== 'FULLY_PAID' && unit.status !== 'SOLD') return true;
+      } else {
+        if (unit.status !== statusFilter) return true;
+      }
+    }
+    
+    if (roomsFilter !== 'ALL') {
+      if (roomsFilter === '4') {
+        if (unit.rooms !== 4) return true;
+      } else if (roomsFilter === '5+') {
+        if (unit.rooms < 5) return true;
+      } else {
+        if (unit.rooms?.toString() !== roomsFilter) return true;
+      }
+    }
+    
     if (priceFilter.min && unit.price < Number(priceFilter.min)) return true;
     if (priceFilter.max && unit.price > Number(priceFilter.max)) return true;
     if (areaFilter.min && unit.area < Number(areaFilter.min)) return true;
@@ -491,13 +614,13 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       <div className={`${styles.mainContent} ${selectedUnit ? styles.mainContentShifted : ''}`}>
         <header className={styles.header}>
           <div className={styles.titleArea}>
-            <h1>🏢 Умная Шахматка</h1>
-            <p>Мониторинг квартирографии в реальном времени · Курс: {rateLoading ? '⏳ загрузка...' : `${exchangeRate} ₾/$`}</p>
+            <h1>Умная Шахматка</h1>
+            <p>Мониторинг квартирографии в реальном времени · Курс: {rateLoading ? 'Загрузка...' : `${exchangeRate} ₾/$`}</p>
           </div>
           <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-            <button className={styles.importBtn} onClick={() => setShowImportModal(true)}>📥 Импорт Excel</button>
-            <button className={styles.massPriceBtn} onClick={() => setShowMassPanel(!showMassPanel)}>💰 Массовое изменение цен</button>
-            <button className={styles.createUnitBtn} onClick={() => setShowCreateUnitModal(true)}>➕ Новая квартира</button>
+            <button className={styles.importBtn} onClick={() => setShowImportModal(true)}>Импорт Excel</button>
+            <button className={styles.massPriceBtn} onClick={() => setShowMassPanel(!showMassPanel)}>Массовое изменение цен</button>
+            <button className={styles.createUnitBtn} onClick={() => setShowCreateUnitModal(true)}>Новая квартира</button>
             <select value={activeProjectId || ''} onChange={(e) => {
               setActiveProjectId(e.target.value);
               const p = projects.find(x => x.id === e.target.value);
@@ -512,7 +635,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
         {showMassPanel && (
           <div className={styles.massPriceBar}>
             <div className={styles.massPriceHeader}>
-              <h3>💰 Массовое изменение цен (CAT-007)</h3>
+              <h3>Массовое изменение цен (CAT-007)</h3>
               <button className={styles.closeBtnSmall} onClick={() => setShowMassPanel(false)}>✕</button>
             </div>
             <div className={styles.massFormRow}>
@@ -570,10 +693,23 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
           <div style={{ marginLeft: 'auto', display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
             <span className={styles.filterLabel}>Фильтры:</span>
             <select className={styles.filterSelect} value={statusFilter} onChange={e => setStatusFilter(e.target.value)}>
-              <option value="ALL">Все статусы</option><option value="FREE">Свободные</option><option value="SOFT_BOOKED">Устная бронь</option><option value="HARD_BOOKED">Платная бронь</option>
+              <option value="ALL">Все статусы</option>
+              <option value="FREE">Свободные</option>
+              <option value="SOFT">Устная бронь</option>
+              <option value="HARD">Платная бронь</option>
+              <option value="CONTRACT_SIGNED">Договор подписан</option>
+              <option value="DOWN_PAYMENT_RECEIVED">Взнос оплачен</option>
+              <option value="SOLD">Продано / Оплачено</option>
+              <option value="SERVICE">Служебное резервирование</option>
+              <option value="EXCLUDED">Исключена</option>
             </select>
             <select className={styles.filterSelect} value={roomsFilter} onChange={e => setRoomsFilter(e.target.value)}>
-              <option value="ALL">Все комнаты</option><option value="1">1-комн.</option><option value="2">2-комн.</option><option value="3">3-комн.</option>
+              <option value="ALL">Все комнаты</option>
+              <option value="1">1-комн.</option>
+              <option value="2">2-комн.</option>
+              <option value="3">3-комн.</option>
+              <option value="4">4-комн.</option>
+              <option value="5+">5+ комн.</option>
             </select>
             <input type="number" placeholder="Цена от" className={styles.filterInput} style={{ width: '100px' }} value={priceFilter.min} onChange={e => setPriceFilter({...priceFilter, min: e.target.value})} />
             <input type="number" placeholder="Цена до" className={styles.filterInput} style={{ width: '100px' }} value={priceFilter.max} onChange={e => setPriceFilter({...priceFilter, max: e.target.value})} />
@@ -610,7 +746,11 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                             <>${Math.round(unit.price).toLocaleString()}<span className={styles.gelPrice}>{Math.round(unit.price * parseFloat(exchangeRate)).toLocaleString()} ₾</span></>
                           ) : getStatusName(unit.status)}
                         </div>
-                        {unit.status === 'SOFT_BOOKED' && <div className={styles.timerBadge}>23:59</div>}
+                        {unit.status === 'SOFT_BOOKED' && (
+                          <div className={styles.timerBadge}>
+                            {getRemainingTime(unit.bookingExpiresAt)}
+                          </div>
+                        )}
                         {unit.price > 300000 && unit.status === 'FREE' && <div className={styles.vipBadge}>VIP</div>}
                       </div>
                     );
@@ -632,8 +772,8 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                 <div className={`${styles.statusPill} ${getStatusClass(selectedUnit.status)}`}>{getStatusName(selectedUnit.status)}</div>
               </div>
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={openEditModal} className={styles.editUnitBtn} title="Редактировать">✏️</button>
-                <button onClick={handleDeleteUnit} className={styles.deleteUnitBtn} title="Исключить из продаж">🗑️</button>
+                <button onClick={openEditModal} className={styles.editUnitBtn} title="Редактировать">Редактировать</button>
+                <button onClick={handleDeleteUnit} className={styles.deleteUnitBtn} title="Исключить из продаж">Исключить</button>
                 <button onClick={closePanel} className={styles.closeBtn}>✕</button>
               </div>
             </div>
@@ -647,7 +787,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
               </div>
 
               <div className={styles.calcCard}>
-                <h3>📊 Финансовый калькулятор</h3>
+                <h3>Финансовый калькулятор</h3>
                 <div style={{ marginBottom: '12px' }}>
                   <span className={styles.calcLabel}>Первоначальный взнос ($)</span>
                   <input type="number" value={downPayment} onChange={(e) => setDownPayment(Number(e.target.value))} className={styles.calcInput} />
@@ -666,7 +806,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                 </div>
               </div>
 
-              <button type="button" className={styles.historyBtn} onClick={loadUnitPriceHistory}>📜 История цен</button>
+              <button type="button" className={styles.historyBtn} onClick={loadUnitPriceHistory}>История цен</button>
               
               {priceHistory.length > 0 && (
                 <div className={styles.priceHistoryList}>
@@ -702,15 +842,13 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                       >
                         Платная (Hard)
                       </button>
-                      
-                        <button 
-                          type="button"
-                          className={`${styles.bookingTypeTab} ${bookingType === 'SERVICE' ? styles.bookingTypeTabActiveService : ''}`} 
-                          onClick={() => setBookingType('SERVICE')}
-                        >
-                          Служебная
-                        </button>
-                      
+                      <button 
+                        type="button"
+                        className={`${styles.bookingTypeTab} ${bookingType === 'SERVICE' ? styles.bookingTypeTabActiveService : ''}`} 
+                        onClick={() => setBookingType('SERVICE')}
+                      >
+                        Служебная
+                      </button>
                     </div>
                   </div>
 
@@ -727,9 +865,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                           <option value="1">1 час</option>
                           <option value="2">2 часа</option>
                           <option value="4">4 часа</option>
-                          {(userRole === 'supervisor' || userRole === 'admin' || userRole === 'rop') && (
-                            <option value="24">24 часа</option>
-                          )}
+                          <option value="24">24 часа</option>
                         </select>
                       </>
                     )}
@@ -765,7 +901,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                       className={styles.leadSelect}
                     >
                       <option value="">Выберите клиента...</option>
-                      {leads.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                      {clients.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
                     </select>
                   </div>
 
@@ -774,11 +910,125 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                     disabled={loading || !selectedLeadId} 
                     className={styles.bookBtn}
                   >
-                    {loading ? 'Загрузка...' : '⚡ Забронировать'}
+                    {loading ? 'Загрузка...' : 'Забронировать'}
                   </button>
                 </div>
+              ) : ['SOFT_BOOKED', 'RESERVATION_ORAL', 'HARD_BOOKED', 'RESERVATION_PAID', 'SERVICE'].includes(selectedUnit.status) ? (
+                <div style={{ marginTop: '12px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                  <div className={styles.bookingSection} style={{ background: '#fff7ed', borderColor: '#fed7aa' }}>
+                    <div className={styles.bookedAlert} style={{ border: 'none', padding: 0, marginBottom: '12px' }}>
+                      <span>Объект забронирован ({getStatusName(selectedUnit.status)})</span>
+                    </div>
+                    
+                    <button 
+                      onClick={onReleaseBook} 
+                      disabled={loading} 
+                      className={styles.bookBtn}
+                      style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)' }}
+                    >
+                      {loading ? 'Загрузка...' : 'Снять бронь'}
+                    </button>
+                  </div>
+
+                  {/* Очередь (Лист ожидания) */}
+                  <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
+                    <h4 style={{ margin: '0 0 12px 0', fontSize: '0.95rem', fontWeight: 700, color: '#0f172a', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                      📋 Очередь (Лист ожидания)
+                    </h4>
+
+                    {waitingList.length === 0 ? (
+                      <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: '#64748b' }}>В очереди пока нет клиентов.</p>
+                    ) : (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                        {waitingList.map((item, idx) => (
+                          <div 
+                            key={item.id} 
+                            style={{ 
+                              display: 'flex', 
+                              alignItems: 'center', 
+                              justifyContent: 'space-between',
+                              background: 'white', 
+                              border: '1px solid #e2e8f0', 
+                              borderRadius: '8px', 
+                              padding: '8px 12px',
+                              boxShadow: '0 1px 2px rgba(0,0,0,0.02)'
+                            }}
+                          >
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                              <span style={{ fontSize: '0.8rem', fontWeight: 'bold', color: '#94a3b8', background: '#f1f5f9', width: '20px', height: '20px', borderRadius: '10px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>
+                                {idx + 1}
+                              </span>
+                              <span style={{ fontSize: '0.85rem', fontWeight: 600, color: '#334155' }}>{item.leadName}</span>
+                              {item.leadIsVip && (
+                                <span style={{ background: '#fef3c7', color: '#b45309', padding: '1px 6px', borderRadius: '4px', fontSize: '0.7rem', fontWeight: 'bold' }}>
+                                  ⭐ VIP
+                                </span>
+                              )}
+                            </div>
+                            <button 
+                              onClick={() => handleRemoveFromQueue(item.id)}
+                              style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 600 }}
+                              title="Убрать из очереди"
+                            >
+                              Убрать
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Добавление в очередь */}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #e2e8f0', paddingTop: '12px' }}>
+                      <span style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748b' }}>Поставить клиента в очередь</span>
+                      <div style={{ display: 'flex', gap: '8px' }}>
+                        <select 
+                          value={wlLeadId}
+                          onChange={e => setWlLeadId(e.target.value)}
+                          style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.85rem', background: 'white' }}
+                        >
+                          <option value="">Выберите клиента...</option>
+                          {clients.map(l => (
+                            <option key={l.id} value={l.id}>
+                              {l.name} {l.isVip ? '⭐ VIP' : ''}
+                            </option>
+                          ))}
+                        </select>
+                        <button 
+                          onClick={handleAddToQueue}
+                          disabled={wlSubmitting || !wlLeadId}
+                          style={{ 
+                            background: '#0f172a', 
+                            color: 'white', 
+                            border: 'none', 
+                            borderRadius: '8px', 
+                            padding: '8px 16px', 
+                            cursor: 'pointer', 
+                            fontSize: '0.85rem', 
+                            fontWeight: 600,
+                            opacity: (!wlLeadId || wlSubmitting) ? 0.6 : 1
+                          }}
+                        >
+                          {wlSubmitting ? '...' : 'В очередь'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : ['CONTRACT_SIGNED', 'DOWN_PAYMENT_RECEIVED', 'FULLY_PAID', 'SOLD'].includes(selectedUnit.status) ? (
+                <div className={styles.bookingSection} style={{ background: '#ecfdf5', borderColor: '#a7f3d0' }}>
+                  <div className={styles.bookedAlert} style={{ border: 'none', padding: 0, color: '#065f46' }}>
+                    <span style={{ fontWeight: 'bold' }}>🔒 Сделка оформлена ({getStatusName(selectedUnit.status)})</span>
+                    <p style={{ margin: '8px 0 0 0', fontSize: '11px', color: '#047857', lineHeight: '1.4' }}>
+                      Этот объект продан или по нему заключен договор (получена оплата). Прямое снятие бронирования в шахматке заблокировано.
+                    </p>
+                  </div>
+                </div>
               ) : (
-                <div className={styles.bookedAlert}><span>🔒 Объект забронирован</span></div>
+                <div className={styles.bookingSection} style={{ background: '#f1f5f9', borderColor: '#cbd5e1' }}>
+                  <div className={styles.bookedAlert} style={{ border: 'none', padding: 0, color: '#475569' }}>
+                    <span>Объект недоступен для бронирования ({getStatusName(selectedUnit.status)})</span>
+                  </div>
+                </div>
               )}
             </div>
           </>
@@ -789,32 +1039,32 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       {showImportModal && (
         <div className={styles.modalOverlay} onClick={() => setShowImportModal(false)}>
           <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
-            <div className={styles.modalHeader}><h2><span>📥</span> Импорт каталога</h2><button className={styles.modalCloseBtn} onClick={() => setShowImportModal(false)}>✕</button></div>
+            <div className={styles.modalHeader}><h2>Импорт каталога</h2><button className={styles.modalCloseBtn} onClick={() => setShowImportModal(false)}>✕</button></div>
             <div className={styles.modalBody}>
-              <div className={styles.modalDesc}>📌 Загрузите файл Excel (.xlsx, .xls) с колонками:<br/><code>projectName, blockNumber, floor, number, area, rooms, price</code></div>
+              <div className={styles.modalDesc}>Загрузите файл Excel (.xlsx, .xls) с колонками:<br/><code>projectName, blockNumber, floor, number, area, rooms, price</code></div>
               <div className={`${styles.fileDropZone} ${importFile ? styles.dragActive : ''}`} onClick={() => document.getElementById('excelFileInput')?.click()}>
-                <div className={styles.fileIcon}>📊</div>
+                <div className={styles.fileIcon}>Файл</div>
                 <p><strong>Нажмите для выбора</strong> или перетащите файл</p>
                 <p className={styles.fileHint}>Поддерживаются .xlsx, .xls (до 10 МБ)</p>
                 <input id="excelFileInput" type="file" accept=".xlsx,.xls,.csv" onChange={(e) => setImportFile(e.target.files?.[0] || null)} className={styles.fileInput} />
               </div>
               {importFile && (
                 <div className={styles.selectedFile}>
-                  <span>📎</span><span className={styles.fileName}>{importFile.name}</span>
+                  <span className={styles.fileName}>{importFile.name}</span>
                   <span className={styles.fileSize}>{(importFile.size / 1024).toFixed(1)} KB</span>
                   <button className={styles.removeFileBtn} onClick={() => setImportFile(null)}>✕</button>
                 </div>
               )}
               <div className={styles.formatExample}>
-                <h4>📋 Пример формата Excel</h4>
+                <h4>Пример формата Excel</h4>
                 <table className={styles.exampleTable}><thead><tr><th>projectName</th><th>blockNumber</th><th>number</th><th>price</th></tr></thead>
                 <tbody><tr><td>Астана Тауэр</td><td>А</td><td>101</td><td>18000000</td></tr>
                 <tr><td>Астана Тауэр</td><td>А</td><td>102</td><td>25000000</td></tr></tbody></table>
-                <button className={styles.downloadTemplateBtn} onClick={downloadTemplate}>📎 Скачать шаблон Excel</button>
+                <button className={styles.downloadTemplateBtn} onClick={downloadTemplate}>Скачать шаблон Excel</button>
               </div>
               <div className={styles.modalActions}>
                 <button className={styles.modalCancelBtn} onClick={() => setShowImportModal(false)}>Отмена</button>
-                <button className={styles.modalImportBtn} onClick={handleImport} disabled={loading || !importFile}>{loading ? '⏳ Импорт...' : '🚀 Загрузить'}</button>
+                <button className={styles.modalImportBtn} onClick={handleImport} disabled={loading || !importFile}>{loading ? 'Импорт...' : 'Загрузить'}</button>
               </div>
             </div>
           </div>
@@ -825,7 +1075,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       {showCreateUnitModal && (
         <div className={styles.modalOverlay} onClick={() => setShowCreateUnitModal(false)}>
           <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
-            <h2>➕ Создание новой квартиры</h2>
+            <h2>Создание новой квартиры</h2>
             <div className={styles.formGroup}>
               <label>Корпус *</label>
               <select className={styles.input} value={selectedBlockId} onChange={e => setSelectedBlockId(e.target.value)}>
@@ -861,7 +1111,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       {showEditUnitModal && (
         <div className={styles.modalOverlay} onClick={() => setShowEditUnitModal(false)}>
           <div className={styles.modalContent} onClick={e => e.stopPropagation()}>
-            <h2>✏️ Редактирование квартиры №{selectedUnit?.number}</h2>
+            <h2>Редактирование квартиры №{selectedUnit?.number}</h2>
             <div className={styles.formRow}>
               <div className={styles.formGroup}><label>Номер квартиры</label><input className={styles.input} value={editUnitData.number} onChange={e => setEditUnitData({...editUnitData, number: e.target.value})} /></div>
               <div className={styles.formGroup}><label>Этаж</label><input type="number" className={styles.input} value={editUnitData.floor} onChange={e => setEditUnitData({...editUnitData, floor: e.target.value})} /></div>
