@@ -154,7 +154,22 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
   }[]>([]);
   const undoTimersRef = useRef<Record<string, { timer: NodeJS.Timeout; interval: NodeJS.Timeout }>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const scrollMirrorRef = useRef<HTMLDivElement>(null);
+  const scrollWidthRef = useRef<HTMLDivElement>(null);
   const scrollAnimRef = useRef<number | null>(null);
+
+  // Синхронизируем ширину зеркального скроллбара с реальной шириной канбана
+  useEffect(() => {
+    const syncWidth = () => {
+      if (scrollContainerRef.current && scrollWidthRef.current) {
+        scrollWidthRef.current.style.width = scrollContainerRef.current.scrollWidth + 'px';
+      }
+    };
+    syncWidth();
+    const observer = new ResizeObserver(syncWidth);
+    if (scrollContainerRef.current) observer.observe(scrollContainerRef.current);
+    return () => observer.disconnect();
+  }, [deals]);
 
   const startAutoScroll = (clientX: number) => {
     if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
@@ -191,6 +206,18 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
     if (scrollAnimRef.current) {
       cancelAnimationFrame(scrollAnimRef.current);
       scrollAnimRef.current = null;
+    }
+  };
+
+  const handleMainScroll = () => {
+    if (scrollMirrorRef.current && scrollContainerRef.current) {
+      scrollMirrorRef.current.scrollLeft = scrollContainerRef.current.scrollLeft;
+    }
+  };
+
+  const handleMirrorScroll = () => {
+    if (scrollContainerRef.current && scrollMirrorRef.current) {
+      scrollContainerRef.current.scrollLeft = scrollMirrorRef.current.scrollLeft;
     }
   };
 
@@ -531,9 +558,19 @@ const handleSetPrimaryClient = async (leadId: string) => {
         <p style={{color: '#64748b', fontSize: '0.95rem'}}></p>
       </header>
 
+      {/* Зеркальный скроллбар над колонками */}
+      <div
+        ref={scrollMirrorRef}
+        onScroll={handleMirrorScroll}
+        className={styles.kanbanScrollMirror}
+      >
+        <div ref={scrollWidthRef} className={styles.kanbanScrollMirrorInner} />
+      </div>
+
       <div
         className={styles.kanbanScroll}
         ref={scrollContainerRef}
+        onScroll={handleMainScroll}
         onDragOver={(e) => { e.preventDefault(); startAutoScroll(e.clientX); }}
         onDragLeave={stopAutoScroll}
       >
@@ -782,13 +819,17 @@ const handleSetPrimaryClient = async (leadId: string) => {
       <button
         className={styles.quickCallBtn}
         onClick={() => {
-          setSearchQuery('');
-          setSearchResults([]);
-          setSelectedClient(null);
-          setIsPrimaryClient(false);
-          setShowAddClientModal(true);
+          if (showAddClientModal) {
+            setShowAddClientModal(false);
+          } else {
+            setSearchQuery('');
+            setSearchResults([]);
+            setSelectedClient(null);
+            setIsPrimaryClient(false);
+            setShowAddClientModal(true);
+          }
         }}
-        style={{ fontSize: '1.2rem', padding: '4px 12px' }}
+        style={{ fontSize: '1.2rem', padding: '4px 12px', transition: 'transform 0.2s', transform: showAddClientModal ? 'rotate(45deg)' : 'none' }}
       >
         +
       </button>
@@ -834,6 +875,70 @@ const handleSetPrimaryClient = async (leadId: string) => {
         </div>
       </div>
     ))}
+
+    {/* Inline-панель добавления участника */}
+    <div className={`${styles.addParticipantPanel} ${showAddClientModal ? styles.open : ''}`}>
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginTop: '4px' }}>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+          <input
+            type="text"
+            className={styles.modalInput}
+            placeholder="Имя, телефон или email..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearchLeads()}
+          />
+          <button className={styles.quickCallBtn} onClick={handleSearchLeads}>🔍</button>
+        </div>
+
+        {searchLoading && <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Поиск...</p>}
+
+        {searchResults.length > 0 && (
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', maxHeight: '160px', overflowY: 'auto', marginBottom: '12px', background: 'white' }}>
+            {searchResults.map(lead => (
+              <div
+                key={lead.id}
+                style={{ padding: '10px 12px', cursor: 'pointer', background: selectedClient?.id === lead.id ? '#eff6ff' : 'white', borderBottom: '1px solid #f1f5f9', fontSize: '0.9rem' }}
+                onClick={() => setSelectedClient(lead)}
+              >
+                <strong>{lead.name}</strong> — {lead.phone}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {selectedClient && (
+          <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '0.88rem' }}>
+            ✅ <strong>{selectedClient.name}</strong> — {selectedClient.phone}
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', fontWeight: 400 }}>
+              <input type="checkbox" checked={isPrimaryClient} onChange={e => setIsPrimaryClient(e.target.checked)} />
+              Сделать основным клиентом
+            </label>
+          </div>
+        )}
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '10px 0' }}>
+          <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+          <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>или</span>
+          <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+        </div>
+
+        <button
+          className={styles.quickCallBtn}
+          style={{ width: '100%', marginBottom: '10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', fontWeight: 700 }}
+          onClick={() => setShowRegisterNewClient(true)}
+        >
+          ➕ Зарегистрировать нового клиента
+        </button>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button className={styles.quickCallBtn} onClick={() => setShowAddClientModal(false)}>Отмена</button>
+          <button className={styles.saveMortgageBtn} onClick={handleAddClient} disabled={!selectedClient}>
+            Добавить
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   {/* БЛОК ОБЪЕКТ НЕДВИЖИМОСТИ С ПЛЮСИКОМ */}
@@ -845,12 +950,16 @@ const handleSetPrimaryClient = async (leadId: string) => {
       <button
         className={styles.quickCallBtn}
         onClick={() => {
-          setSearchQuery('');
-          setSearchResults([]);
-          setSelectedUnit(null);
-          setShowAddUnitModal(true);
+          if (showAddUnitModal) {
+            setShowAddUnitModal(false);
+          } else {
+            setSearchQuery('');
+            setSearchResults([]);
+            setSelectedUnit(null);
+            setShowAddUnitModal(true);
+          }
         }}
-        style={{ fontSize: '1.2rem', padding: '4px 12px' }}
+        style={{ fontSize: '1.2rem', padding: '4px 12px', transition: 'transform 0.2s', transform: showAddUnitModal ? 'rotate(45deg)' : 'none' }}
       >
         +
       </button>
@@ -890,6 +999,52 @@ const handleSetPrimaryClient = async (leadId: string) => {
         </div>
       </div>
     ))}
+
+    {/* Inline-панель добавления объекта */}
+    <div className={`${styles.addParticipantPanel} ${showAddUnitModal ? styles.open : ''}`}>
+      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginTop: '4px' }}>
+        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
+          <input
+            type="text"
+            className={styles.modalInput}
+            placeholder="Номер квартиры или ЖК..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            onKeyDown={e => e.key === 'Enter' && handleSearchUnits()}
+          />
+          <button className={styles.quickCallBtn} onClick={handleSearchUnits}>🔍</button>
+        </div>
+
+        {searchLoading && <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Поиск...</p>}
+
+        {searchResults.length > 0 && (
+          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', maxHeight: '160px', overflowY: 'auto', marginBottom: '12px', background: 'white' }}>
+            {searchResults.map(unit => (
+              <div
+                key={unit.id}
+                style={{ padding: '10px 12px', cursor: 'pointer', background: selectedUnit?.id === unit.id ? '#eff6ff' : 'white', borderBottom: '1px solid #f1f5f9', fontSize: '0.9rem' }}
+                onClick={() => setSelectedUnit(unit)}
+              >
+                <strong>{unit.projectName}</strong> – №{unit.number} – ${Number(unit.price).toLocaleString()}
+              </div>
+            ))}
+          </div>
+        )}
+
+        {selectedUnit && (
+          <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '0.88rem' }}>
+            ✅ <strong>{selectedUnit.projectName}</strong> – №{selectedUnit.number}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+          <button className={styles.quickCallBtn} onClick={() => setShowAddUnitModal(false)}>Отмена</button>
+          <button className={styles.saveMortgageBtn} onClick={handleAddUnit} disabled={!selectedUnit}>
+            Добавить
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 
   {/* Блок Ипотека (остается без изменений) */}
@@ -951,151 +1106,23 @@ const handleSetPrimaryClient = async (leadId: string) => {
   </div>
 </main>
 
-{/* Модалка добавления клиента */}
-{showAddClientModal && (
-  <div className={styles.overlay} onClick={() => setShowAddClientModal(false)}>
-    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
-      <header className={styles.modalHeader}>
-        <h2 style={{ fontWeight: 800 }}>➕ Добавить участника сделки</h2>
-        <button className={styles.closeBtn} onClick={() => setShowAddClientModal(false)}>✕</button>
-      </header>
-      <div style={{ overflowY: 'auto', flex: 1, padding: '0 4px' }}>
-
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-        <input
-          type="text"
-          className={styles.modalInput}
-          placeholder="Имя, телефон или email..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-        />
-        <button className={styles.quickCallBtn} onClick={handleSearchLeads}>🔍 Поиск</button>
-      </div>
-
-      {searchLoading && <p>Поиск...</p>}
-
-      {searchResults.length > 0 && (
-        <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', maxHeight: '250px', overflowY: 'auto', marginBottom: '16px' }}>
-          {searchResults.map(lead => (
-            <div
-              key={lead.id}
-              style={{ padding: '12px', cursor: 'pointer', background: selectedClient?.id === lead.id ? '#eff6ff' : 'white', borderBottom: '1px solid #e2e8f0' }}
-              onClick={() => setSelectedClient(lead)}
-            >
-              <strong>{lead.name}</strong> – {lead.phone}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {selectedClient && (
-        <div style={{ marginBottom: '16px', padding: '10px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
-          <strong>Выбран:</strong> {selectedClient.name} — {selectedClient.phone}
-        </div>
-      )}
-
-      {selectedClient && (
-        <div style={{ marginBottom: '16px' }}>
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <input type="checkbox" checked={isPrimaryClient} onChange={e => setIsPrimaryClient(e.target.checked)} />
-            Сделать основным клиентом (на кого оформляется договор)
-          </label>
-        </div>
-      )}
-
-      {/* Разделитель */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '16px 0' }}>
-        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
-        <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>или</span>
-        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
-      </div>
-
-      <button
-        className={styles.quickCallBtn}
-        style={{ width: '100%', marginBottom: '16px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', fontWeight: 700 }}
-        onClick={() => setShowRegisterNewClient(true)}
-      >
-        ➕ Зарегистрировать нового клиента
-      </button>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-        <button className={styles.quickCallBtn} onClick={() => setShowAddClientModal(false)}>Отмена</button>
-        <button className={styles.saveMortgageBtn} onClick={handleAddClient} disabled={!selectedClient}>
-          Добавить
-        </button>
-      </div>
-      </div>
-    </div>
-  </div>
-)}
-
-{/* Модалка регистрации нового клиента поверх модалки добавления участника */}
+{/* Модалка регистрации нового клиента */}
 {showRegisterNewClient && (
   <LeadModal
     onClose={() => setShowRegisterNewClient(false)}
     organizationId={organizationId}
-    onSuccess={async () => {
-      // После создания — ничего не делаем здесь, всё обрабатывается в onCreated
-    }}
+    onSuccess={async () => {}}
     onCreated={async (newClientId: string, newClientName: string, newClientPhone: string) => {
-      // Закрываем модалку регистрации
       setShowRegisterNewClient(false);
-      // Автоматически выбираем нового клиента в модалке добавления участника
       setSelectedClient({ id: newClientId, name: newClientName, phone: newClientPhone });
     }}
   />
 )}
 
-{/* Модалка добавления объекта */}
-{showAddUnitModal && (
-  <div className={styles.overlay} onClick={() => setShowAddUnitModal(false)}>
-    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
-      <header className={styles.modalHeader}>
-        <h2 style={{ fontWeight: 800 }}>🏢 Добавить объект недвижимости</h2>
-        <button className={styles.closeBtn} onClick={() => setShowAddUnitModal(false)}>✕</button>
-      </header>
-
-      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
-        <input
-          type="text"
-          className={styles.modalInput}
-          placeholder="Номер квартиры или ЖК..."
-          value={searchQuery}
-          onChange={e => setSearchQuery(e.target.value)}
-        />
-        <button className={styles.quickCallBtn} onClick={handleSearchUnits}>🔍 Поиск</button>
-      </div>
-
-      {searchLoading && <p>Поиск...</p>}
-
-      {searchResults.length > 0 && (
-        <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', maxHeight: '250px', overflowY: 'auto', marginBottom: '16px' }}>
-          {searchResults.map(unit => (
-            <div
-              key={unit.id}
-              style={{ padding: '12px', cursor: 'pointer', background: selectedUnit?.id === unit.id ? '#eff6ff' : 'white', borderBottom: '1px solid #e2e8f0' }}
-              onClick={() => setSelectedUnit(unit)}
-            >
-              <strong>{unit.projectName}</strong> – №{unit.number} – ${Number(unit.price).toLocaleString()}
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
-        <button className={styles.quickCallBtn} onClick={() => setShowAddUnitModal(false)}>Отмена</button>
-        <button className={styles.saveMortgageBtn} onClick={handleAddUnit} disabled={!selectedUnit}>
-          Добавить
-        </button>
-      </div>
-    </div>
-  </div>
-)}
-
 {/* Модалка удаления объекта с причиной */}
 {showRemoveUnitModal && (
-  <div className={styles.overlay} onClick={() => setShowRemoveUnitModal(null)}>
-    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+  <div className={styles.overlaySmall} onClick={() => setShowRemoveUnitModal(null)}>
+    <div className={styles.modalSmall} onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
       <header className={styles.modalHeader}>
         <h2 style={{ fontWeight: 800 }}>❌ Удаление объекта №{showRemoveUnitModal.number}</h2>
         <button className={styles.closeBtn} onClick={() => setShowRemoveUnitModal(null)}>✕</button>
