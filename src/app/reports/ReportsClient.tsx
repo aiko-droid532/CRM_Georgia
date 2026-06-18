@@ -53,8 +53,14 @@ const CATEGORIES = [
 interface ReportsClientProps {
   organizationId: string;
   projects: { id: string; name: string }[];
+  managers: string[];
+  blocks: { id: string; number: string; projectId: string }[];
+  sources: string[];
+  paymentTypes: string[];
+  unitTypes: string[];
   initialData: {
     funnelData: any[];
+    dealTransitions: any[];
     projectSales: any[];
     managerSales: any[];
     cashFlow: any[];
@@ -65,11 +71,108 @@ interface ReportsClientProps {
   };
 }
 
-export default function ReportsClient({ organizationId, projects, initialData }: ReportsClientProps) {
+const CHANNELS = ['Social Media', 'Search Engine', 'Messenger', 'Portal', 'Direct'];
+
+const CHANNEL_TRANSLATIONS: Record<string, string> = {
+  'Social Media': 'Социальные сети',
+  'Search Engine': 'Поисковые системы',
+  'Messenger': 'Мессенджеры',
+  'Portal': 'Порталы недвижимости',
+  'Direct': 'Прямые переходы'
+};
+
+const UNIT_TYPE_TRANSLATIONS: Record<string, string> = {
+  'Apartment': 'Квартира',
+  'Commercial': 'Коммерческое помещение',
+  'Penthouse': 'Пентхаус',
+  'Office': 'Офис',
+  'Parking': 'Паркинг',
+  'Garage': 'Гараж'
+};
+
+const PAYMENT_TYPE_TRANSLATIONS: Record<string, string> = {
+  'Installment': 'Рассрочка',
+  'Cash': 'Наличные',
+  'Mortgage': 'Ипотека',
+  'Standard': 'Стандартный платеж',
+  'None': 'Не указана'
+};
+
+const STAGE_ORDER = [
+  'NEW_LEAD',
+  'CLARIFICATION',
+  'CALL',
+  'CONSULTATION',
+  'PRE_RESERVATION',
+  'RESERVATION',
+  'CONTRACT',
+  'WAITING_PAYMENT',
+  'PAYMENT_CONFIRMED',
+  'SUCCESS'
+];
+
+const STAGE_TRANSLATIONS: Record<string, string> = {
+  'NEW_LEAD': 'Новый интерес',
+  'CLARIFICATION': 'Уточнение деталей',
+  'CALL': 'Первый звонок',
+  'SECOND_CALL': 'Повторный звонок',
+  'THIRD_CALL': 'Решающий звонок',
+  'CONSULTATION': 'Консультация',
+  'PRE_RESERVATION': 'Предбронь',
+  'RESERVATION': 'Устная бронь',
+  'CONTRACT_PREPARATION': 'Подготовка договора',
+  'CONTRACT': 'Договор подписан',
+  'CLIENT_CONFIRMATION': 'Подтверждение клиента',
+  'WAITING_PAYMENT': 'Ожидание оплаты',
+  'PAYMENT_CONFIRMED': 'Оплата подтверждена',
+  'SUCCESS': 'Успешно завершено',
+  'FAILED': 'Провал',
+  'CANCELLED': 'Отменено'
+};
+
+const STAGE_PROBABILITIES: Record<string, number> = {
+  'NEW_LEAD': 0.05,
+  'CLARIFICATION': 0.10,
+  'CALL': 0.10,
+  'SECOND_CALL': 0.15,
+  'THIRD_CALL': 0.20,
+  'CONSULTATION': 0.25,
+  'PRE_RESERVATION': 0.40,
+  'RESERVATION': 0.60,
+  'CONTRACT_PREPARATION': 0.80,
+  'CONTRACT': 0.90,
+  'CLIENT_CONFIRMATION': 0.90,
+  'WAITING_PAYMENT': 0.95,
+  'PAYMENT_CONFIRMED': 0.98,
+  'SUCCESS': 1.00,
+  'FAILED': 0.00,
+  'CANCELLED': 0.00
+};
+
+function getChannelBySource(source: string): string {
+  if (!source) return 'Direct';
+  const s = source.toLowerCase();
+  if (s.includes('instagram') || s.includes('facebook') || s.includes('fb') || s.includes('insta')) return 'Social Media';
+  if (s.includes('google') || s.includes('yandex') || s.includes('seo') || s.includes('search')) return 'Search Engine';
+  if (s.includes('telegram') || s.includes('tg') || s.includes('whatsapp') || s.includes('viber')) return 'Messenger';
+  if (s.includes('ge') || s.includes('portal') || s.includes('myhome') || s.includes('ss')) return 'Portal';
+  return 'Direct';
+}
+
+export default function ReportsClient({ 
+  organizationId, 
+  projects, 
+  managers, 
+  blocks, 
+  sources, 
+  paymentTypes, 
+  unitTypes, 
+  initialData 
+}: ReportsClientProps) {
   const [activeCategory, setActiveCategory] = useState('sales');
   const [activeReportId, setActiveReportId] = useState('RPT-001');
   
-  // Фильтры
+  // Общие фильтры
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
@@ -77,6 +180,16 @@ export default function ReportsClient({ organizationId, projects, initialData }:
   });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedProject, setSelectedProject] = useState('ALL');
+  
+  // Дополнительные фильтры для RPT-001 - RPT-004
+  const [selectedManager, setSelectedManager] = useState('ALL');
+  const [selectedSource, setSelectedSource] = useState('ALL');
+  const [selectedChannel, setSelectedChannel] = useState('ALL');
+  const [selectedPaymentType, setSelectedPaymentType] = useState('ALL');
+  const [selectedClientType, setSelectedClientType] = useState('ALL'); // 'ALL' | 'VIP' | 'REGULAR'
+  const [selectedBlock, setSelectedBlock] = useState('ALL');
+  const [selectedUnitType, setSelectedUnitType] = useState('ALL');
+  const [funnelViewMode, setFunnelViewMode] = useState('pipeline'); // 'pipeline' | 'conversion'
 
   // Получаем текущий выбранный отчет
   const activeReport = useMemo(() => {
@@ -187,109 +300,264 @@ export default function ReportsClient({ organizationId, projects, initialData }:
 
     switch (activeReport.id) {
       case 'RPT-001': { // Воронка продаж
-        const filtered = initialData.funnelData.filter((row: any) => {
-          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          if (startDate && row.createdAt && row.createdAt < startDate) return false;
-          if (endDate && row.createdAt && row.createdAt > endDate) return false;
-          return true;
-        });
+        const isPipeline = funnelViewMode === 'pipeline';
+        
+        if (isPipeline) {
+          // Фильтрация текущего пайплайна сделок
+          const filtered = initialData.funnelData.filter((row: any) => {
+            if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+            if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+            if (selectedSource !== 'ALL' && row.source !== selectedSource) return false;
+            if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return false;
+            if (selectedPaymentType !== 'ALL' && row.paymentType !== selectedPaymentType) return false;
+            if (selectedClientType !== 'ALL') {
+              if (selectedClientType === 'VIP' && !row.isVip) return false;
+              if (selectedClientType === 'REGULAR' && row.isVip) return false;
+            }
+            if (startDate && row.createdAt && row.createdAt < startDate) return false;
+            if (endDate && row.createdAt && row.createdAt > endDate) return false;
+            return true;
+          });
 
-        const stages: Record<string, { count: number; amount: number }> = {};
-        filtered.forEach((row: any) => {
-          const stage = row.stage || 'NEW_LEAD';
-          if (!stages[stage]) {
-            stages[stage] = { count: 0, amount: 0 };
-          }
-          stages[stage].count += 1;
-          stages[stage].amount += row.amount;
-        });
+          // Агрегируем по этапам воронки
+          const stagesMap: Record<string, { count: number; amount: number }> = {};
+          STAGE_ORDER.forEach(st => {
+            stagesMap[st] = { count: 0, amount: 0 };
+          });
 
-        return Object.entries(stages).map(([stage, data]) => ({
-          'Этап воронки': stage,
-          'Количество сделок': data.count,
-          'Сумма на этапе ($)': data.amount
-        }));
+          filtered.forEach((row: any) => {
+            const stage = row.stage;
+            if (stagesMap[stage] !== undefined) {
+              stagesMap[stage].count += 1;
+              stagesMap[stage].amount += row.amount;
+            }
+          });
+
+          // Рассчитываем конверсии
+          let prevCount = 0;
+          const entryCount = filtered.length;
+
+          return STAGE_ORDER.map((stage, idx) => {
+            const stats = stagesMap[stage];
+            const name = STAGE_TRANSLATIONS[stage] || stage;
+            const amountUsd = stats.amount;
+            const amountGel = stats.amount * 2.7; // Курс GEL к USD
+            
+            const convPrev = prevCount > 0 ? parseFloat(((stats.count / prevCount) * 100).toFixed(1)) : (idx === 0 ? 100 : 0);
+            const convEntry = entryCount > 0 ? parseFloat(((stats.count / entryCount) * 100).toFixed(1)) : 0;
+            
+            prevCount = stats.count;
+
+            return {
+              'Этап воронки': name,
+              'Количество сделок': stats.count,
+              'Сумма (USD)': Math.round(amountUsd),
+              'Сумма (GEL)': Math.round(amountGel),
+              'Конверсия от предыд. этапа (%)': convPrev + '%',
+              'Конверсия от общего входа (%)': convEntry + '%'
+            };
+          });
+        } else {
+          // Исторические переходы из AuditLog (Conversion view)
+          const filteredTransitions = initialData.dealTransitions.filter((row: any) => {
+            if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+            if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+            if (selectedSource !== 'ALL' && row.source !== selectedSource) return false;
+            if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return false;
+            if (selectedPaymentType !== 'ALL' && row.paymentType !== selectedPaymentType) return false;
+            if (selectedClientType !== 'ALL') {
+              if (selectedClientType === 'VIP' && !row.isVip) return false;
+              if (selectedClientType === 'REGULAR' && row.isVip) return false;
+            }
+            if (startDate && row.createdAt && row.createdAt < startDate) return false;
+            if (endDate && row.createdAt && row.createdAt > endDate) return false;
+            return true;
+          });
+
+          // Считаем уникальные сделки, прошедшие через каждый статус в выбранном периоде
+          const stagesMap: Record<string, Set<string>> = {};
+          const amountsMap: Record<string, number> = {};
+          STAGE_ORDER.forEach(st => {
+            stagesMap[st] = new Set<string>();
+            amountsMap[st] = 0;
+          });
+
+          filteredTransitions.forEach((row: any) => {
+            const toStage = row.toStage;
+            if (stagesMap[toStage] !== undefined) {
+              stagesMap[toStage].add(row.dealId);
+              amountsMap[toStage] += row.amount;
+            }
+          });
+
+          let prevCount = 0;
+          const entryCount = filteredTransitions.reduce((acc: Set<string>, row: any) => acc.add(row.dealId), new Set<string>()).size;
+
+          return STAGE_ORDER.map((stage, idx) => {
+            const count = stagesMap[stage].size;
+            const name = STAGE_TRANSLATIONS[stage] || stage;
+            const amountUsd = amountsMap[stage];
+            const amountGel = amountUsd * 2.7;
+
+            const convPrev = prevCount > 0 ? parseFloat(((count / prevCount) * 100).toFixed(1)) : (idx === 0 ? 100 : 0);
+            const convEntry = entryCount > 0 ? parseFloat(((count / entryCount) * 100).toFixed(1)) : 0;
+
+            prevCount = count;
+
+            return {
+              'Этап воронки': name,
+              'Уникальных переходов': count,
+              'Оборот этапа (USD)': Math.round(amountUsd),
+              'Оборот этапа (GEL)': Math.round(amountGel),
+              'Конверсия от предыд. этапа (%)': convPrev + '%',
+              'Конверсия от входа воронки (%)': convEntry + '%'
+            };
+          });
+        }
       }
 
       case 'RPT-002': { // План/факт по ЖК
-        const filtered = initialData.projectSales.filter((row: any) => {
+        const filteredSales = initialData.projectSales.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockId !== selectedBlock) return false;
+          if (selectedUnitType !== 'ALL' && row.unitType !== selectedUnitType) return false;
           if (startDate && row.wonAt && row.wonAt < startDate) return false;
           if (endDate && row.wonAt && row.wonAt > endDate) return false;
           return true;
         });
 
-        const projectsMap: Record<string, { projectName: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number }> = {};
-        filtered.forEach((row: any) => {
+        // Группируем выигранные продажи по ЖК
+        const projectsMap: Record<string, { projectName: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number; pipelineWeightedRevenue: number }> = {};
+        
+        filteredSales.forEach((row: any) => {
           if (!projectsMap[row.projectId]) {
             projectsMap[row.projectId] = {
               projectName: row.projectName,
               soldUnits: 0,
               actualRevenue: 0,
               targetUnits: row.targetUnits || 10,
-              targetRevenue: row.targetRevenue || 1500000.00
+              targetRevenue: row.targetRevenue || 1500000.00,
+              pipelineWeightedRevenue: 0
             };
           }
           projectsMap[row.projectId].soldUnits += 1;
           projectsMap[row.projectId].actualRevenue += row.price;
         });
 
-        return Object.values(projectsMap).map(p => ({
-          'Жилой Комплекс': p.projectName,
-          'Продано (Юнитов)': p.soldUnits,
-          'План (Юнитов)': p.targetUnits,
-          'Выполнение (%)': ((p.soldUnits / p.targetUnits) * 100).toFixed(1) + '%',
-          'Выручка Факт ($)': p.actualRevenue,
-          'Выручка План ($)': p.targetRevenue
-        }));
+        // Считаем взвешенный пайплайн для прогноза закрытия периода по каждому ЖК
+        const activeDeals = initialData.funnelData.filter((row: any) => {
+          if (row.stage === 'SUCCESS' || row.stage === 'FAILED' || row.stage === 'CANCELLED') return false;
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          return true;
+        });
+
+        activeDeals.forEach((row: any) => {
+          const prob = STAGE_PROBABILITIES[row.stage] || 0;
+          const weightedAmount = row.amount * prob;
+          const projId = row.projectId;
+          
+          if (projectsMap[projId]) {
+            projectsMap[projId].pipelineWeightedRevenue += weightedAmount;
+          } else {
+            // Если по проекту не было успешных сделок, но есть пайплайн
+            const projectObj = projects.find(p => p.id === projId);
+            if (projectObj) {
+              projectsMap[projId] = {
+                projectName: projectObj.name,
+                soldUnits: 0,
+                actualRevenue: 0,
+                targetUnits: 10,
+                targetRevenue: 1500000.00,
+                pipelineWeightedRevenue: weightedAmount
+              };
+            }
+          }
+        });
+
+        return Object.values(projectsMap).map(p => {
+          const forecast = p.actualRevenue + p.pipelineWeightedRevenue;
+          return {
+            'Жилой Комплекс': p.projectName,
+            'Продано (Юнитов)': p.soldUnits,
+            'План (Юнитов)': p.targetUnits,
+            'Выполнение по юнитам (%)': ((p.soldUnits / p.targetUnits) * 100).toFixed(1) + '%',
+            'Выручка Факт ($)': Math.round(p.actualRevenue),
+            'Выручка План ($)': Math.round(p.targetRevenue),
+            'Выполнение по выручке (%)': ((p.actualRevenue / p.targetRevenue) * 100).toFixed(1) + '%',
+            'Прогноз закрытия периода ($)': Math.round(forecast),
+            'Отношение прогноза к плану (%)': ((forecast / p.targetRevenue) * 100).toFixed(1) + '%'
+          };
+        });
       }
 
       case 'RPT-003': { // План/факт по менеджерам
-        const filtered = initialData.managerSales.filter((row: any) => {
+        const filteredSales = initialData.managerSales.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
           if (startDate && row.wonAt && row.wonAt < startDate) return false;
           if (endDate && row.wonAt && row.wonAt > endDate) return false;
           return true;
         });
 
-        const managers: Record<string, { name: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number }> = {};
-        filtered.forEach((row: any) => {
-          if (!managers[row.managerId]) {
-            managers[row.managerId] = {
-              name: row.managerId,
+        const managersMap: Record<string, { name: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number }> = {};
+        
+        filteredSales.forEach((row: any) => {
+          const mgr = row.managerId;
+          if (!managersMap[mgr]) {
+            managersMap[mgr] = {
+              name: mgr,
               soldUnits: 0,
               actualRevenue: 0,
               targetUnits: row.targetUnits || 5,
               targetRevenue: row.targetRevenue || 750000.00
             };
           }
-          managers[row.managerId].soldUnits += 1;
-          managers[row.managerId].actualRevenue += row.price;
+          managersMap[mgr].soldUnits += 1;
+          managersMap[mgr].actualRevenue += row.price;
         });
 
-        return Object.values(managers).map(m => ({
-          'Менеджер': m.name,
-          'Продано (Юнитов)': m.soldUnits,
-          'План (Юнитов)': m.targetUnits,
-          'Выручка Факт ($)': m.actualRevenue,
-          'Выручка План ($)': m.targetRevenue
-        }));
+        // Сортируем менеджеров по объему продаж (рейтинг)
+        const sortedManagers = Object.values(managersMap).sort((a, b) => b.actualRevenue - a.actualRevenue);
+
+        return sortedManagers.map((m, idx) => {
+          const unitPerf = ((m.soldUnits / m.targetUnits) * 100).toFixed(1) + '%';
+          const revPerf = ((m.actualRevenue / m.targetRevenue) * 100).toFixed(1) + '%';
+          const kpiStatus = m.actualRevenue >= m.targetRevenue ? 'Выполнен ✅' : 'В процессе ⏳';
+          
+          return {
+            'Рейтинг': idx + 1,
+            'Менеджер': m.name,
+            'Продано (Юнитов)': m.soldUnits,
+            'План (Юнитов)': m.targetUnits,
+            'Выполнение (Юниты)': unitPerf,
+            'Выручка Факт ($)': Math.round(m.actualRevenue),
+            'Выручка План ($)': Math.round(m.targetRevenue),
+            'Выполнение (Выручка)': revPerf,
+            'Соответствие KPI': kpiStatus
+          };
+        });
       }
 
       case 'RPT-004': { // Сводный отчет по продажам
         const filtered = initialData.cashFlow.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+          if (selectedPaymentType !== 'ALL' && row.paymentType !== selectedPaymentType) return false;
           if (startDate && row.createdAt && row.createdAt < startDate) return false;
           if (endDate && row.createdAt && row.createdAt > endDate) return false;
           return true;
         });
+
         return filtered.map((row: any) => ({
           'Сделка': `DEAL-${row.dealId.substring(0, 8)}`,
           'Клиент': row.clientName,
           'Квартира': `№${row.unitNumber}`,
-          'Сумма договора ($)': row.contractAmount,
-          'Оплачено факт ($)': row.paidAmount,
-          'Осталось по графику ($)': row.pendingAmount
+          'Сумма договора ($)': Math.round(row.contractAmount),
+          'Поступило оплат ($)': Math.round(row.paidAmount),
+          'Ожидается платежей ($)': Math.round(row.pendingAmount),
+          'Схема оплаты': row.paymentType,
+          'Менеджер': row.managerId,
+          'Дата заключения': row.createdAt
         }));
       }
 
@@ -304,9 +572,9 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           'Сделка': `DEAL-${row.dealId.substring(0, 8)}`,
           'Клиент': row.clientName,
           'Квартира': `№${row.unitNumber}`,
-          'Сумма к оплате ($)': row.scheduledAmount,
+          'Сумма к оплате ($)': Math.round(row.scheduledAmount),
           'Срок оплаты': row.dueDate,
-          'Оплачено факт ($)': row.paidAmount,
+          'Оплачено факт ($)': Math.round(row.paidAmount),
           'Статус оплат': row.paymentStatus === 'PAID' ? 'Оплачено' : row.paymentStatus === 'OVERDUE' ? 'Просрочено' : 'Ожидается'
         }));
       }
@@ -323,11 +591,11 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           'Клиент': row.clientName,
           'Телефон': row.clientPhone,
           'Квартира': `№${row.unitNumber}`,
-          'Сумма долга ($)': row.overdueAmount,
+          'Сумма долга ($)': Math.round(row.overdueAmount),
           'Срок платежа': row.dueDate,
           'Дней просрочки': row.daysOverdue,
-          'Начислено пени ($)': row.penalty,
-          'Итого к оплате ($)': row.totalDebt
+          'Начислено пени ($)': Math.round(row.penalty),
+          'Итого к оплате ($)': Math.round(row.totalDebt)
         }));
       }
 
@@ -339,17 +607,17 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           return true;
         });
 
-        const managers: Record<string, { total: number; won: number; lost: number }> = {};
+        const managersMap: Record<string, { total: number; won: number; lost: number }> = {};
         filtered.forEach((row: any) => {
-          if (!managers[row.managerId]) {
-            managers[row.managerId] = { total: 0, won: 0, lost: 0 };
+          if (!managersMap[row.managerId]) {
+            managersMap[row.managerId] = { total: 0, won: 0, lost: 0 };
           }
-          managers[row.managerId].total += 1;
-          if (row.status === 'SUCCESS') managers[row.managerId].won += 1;
-          if (row.status === 'FAILED') managers[row.managerId].lost += 1;
+          managersMap[row.managerId].total += 1;
+          if (row.status === 'SUCCESS') managersMap[row.managerId].won += 1;
+          if (row.status === 'FAILED') managersMap[row.managerId].lost += 1;
         });
 
-        return Object.entries(managers).map(([managerId, stats]) => {
+        return Object.entries(managersMap).map(([managerId, stats]) => {
           const conversion = stats.total > 0 ? parseFloat(((stats.won / stats.total) * 100).toFixed(1)) : 0;
           return {
             'Менеджер': managerId,
@@ -370,19 +638,19 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           return true;
         });
 
-        const channels: Record<string, { total: number; won: number; revenue: number }> = {};
+        const channelsMap: Record<string, { total: number; won: number; revenue: number }> = {};
         filtered.forEach((row: any) => {
-          if (!channels[row.source]) {
-            channels[row.source] = { total: 0, won: 0, revenue: 0 };
+          if (!channelsMap[row.source]) {
+            channelsMap[row.source] = { total: 0, won: 0, revenue: 0 };
           }
-          channels[row.source].total += 1;
+          channelsMap[row.source].total += 1;
           if (row.status === 'SUCCESS') {
-            channels[row.source].won += 1;
-            channels[row.source].revenue += row.price;
+            channelsMap[row.source].won += 1;
+            channelsMap[row.source].revenue += row.price;
           }
         });
 
-        return Object.entries(channels).map(([source, stats]) => {
+        return Object.entries(channelsMap).map(([source, stats]) => {
           const conversion = stats.total > 0 ? parseFloat(((stats.won / stats.total) * 100).toFixed(1)) : 0;
           const cost = stats.total * 150;
           const roi = cost > 0 ? (((stats.revenue - cost) / cost) * 100).toFixed(1) + '%' : '—';
@@ -391,7 +659,7 @@ export default function ReportsClient({ organizationId, projects, initialData }:
             'Привлечено лидов/сделок': stats.total,
             'Продано': stats.won,
             'Конверсия (%)': conversion + '%',
-            'Выручка ($)': stats.revenue,
+            'Выручка ($)': Math.round(stats.revenue),
             'Маркетинговый бюджет ($)': cost,
             'ROI (%)': roi
           };
@@ -401,7 +669,7 @@ export default function ReportsClient({ organizationId, projects, initialData }:
       default:
         return [];
     }
-  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate]);
+  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects]);
 
   // Заголовки колонок таблицы на основе полученных данных
   const tableHeaders = useMemo(() => {
@@ -485,7 +753,8 @@ export default function ReportsClient({ organizationId, projects, initialData }:
         </header>
 
         {/* Панель фильтров */}
-        <section className={styles.filterBar}>
+        <section className={styles.filterBar} style={{ flexWrap: 'wrap', gap: '15px' }}>
+          {/* Фильтр по датам (Период) - доступен везде */}
           <div className={styles.filterGroup}>
             <label className={styles.filterLabel}>Период С</label>
             <input
@@ -504,12 +773,17 @@ export default function ReportsClient({ organizationId, projects, initialData }:
               onChange={e => setEndDate(e.target.value)}
             />
           </div>
+
+          {/* Фильтр ЖК (Project) - доступен везде */}
           <div className={styles.filterGroup}>
             <label className={styles.filterLabel}>Проект (ЖК)</label>
             <select
               className={styles.filterInput}
               value={selectedProject}
-              onChange={e => setSelectedProject(e.target.value)}
+              onChange={e => {
+                setSelectedProject(e.target.value);
+                setSelectedBlock('ALL'); // сброс корпуса при смене ЖК
+              }}
             >
               <option value="ALL">Все ЖК</option>
               {projects.map(proj => (
@@ -519,6 +793,154 @@ export default function ReportsClient({ organizationId, projects, initialData }:
               ))}
             </select>
           </div>
+
+          {/* RPT-001 Режим воронки (Pipeline vs Conversion) */}
+          {activeReportId === 'RPT-001' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Режим воронки</label>
+              <select
+                className={styles.filterInput}
+                value={funnelViewMode}
+                onChange={e => setFunnelViewMode(e.target.value)}
+              >
+                <option value="pipeline">Текущие сделки (Pipeline)</option>
+                <option value="conversion">Исторические переходы (Conversion)</option>
+              </select>
+            </div>
+          )}
+
+          {/* Менеджер - RPT-001, RPT-003, RPT-004 */}
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-003' || activeReportId === 'RPT-004') && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Менеджер</label>
+              <select
+                className={styles.filterInput}
+                value={selectedManager}
+                onChange={e => setSelectedManager(e.target.value)}
+              >
+                <option value="ALL">Все менеджеры</option>
+                {managers.map(mgr => (
+                  <option key={mgr} value={mgr}>
+                    {mgr}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Источник трафика - RPT-001 */}
+          {activeReportId === 'RPT-001' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Источник</label>
+              <select
+                className={styles.filterInput}
+                value={selectedSource}
+                onChange={e => setSelectedSource(e.target.value)}
+              >
+                <option value="ALL">Все источники</option>
+                {sources.map(src => (
+                  <option key={src} value={src}>
+                    {src}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Канал - RPT-001 */}
+          {activeReportId === 'RPT-001' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Канал</label>
+              <select
+                className={styles.filterInput}
+                value={selectedChannel}
+                onChange={e => setSelectedChannel(e.target.value)}
+              >
+                <option value="ALL">Все каналы</option>
+                {CHANNELS.map(ch => (
+                  <option key={ch} value={ch}>
+                    {ch}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Схема оплаты - RPT-001, RPT-004 */}
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-004') && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Схема оплаты</label>
+              <select
+                className={styles.filterInput}
+                value={selectedPaymentType}
+                onChange={e => setSelectedPaymentType(e.target.value)}
+              >
+                <option value="ALL">Все схемы</option>
+                {paymentTypes.map(pt => (
+                  <option key={pt} value={pt}>
+                    {pt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Тип клиента - RPT-001 */}
+          {activeReportId === 'RPT-001' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Тип клиента</label>
+              <select
+                className={styles.filterInput}
+                value={selectedClientType}
+                onChange={e => setSelectedClientType(e.target.value)}
+              >
+                <option value="ALL">Все типы</option>
+                <option value="VIP">⭐ VIP клиент</option>
+                <option value="REGULAR">Обычный клиент</option>
+              </select>
+            </div>
+          )}
+
+          {/* Корпус - RPT-002 */}
+          {activeReportId === 'RPT-002' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Корпус</label>
+              <select
+                className={styles.filterInput}
+                value={selectedBlock}
+                onChange={e => setSelectedBlock(e.target.value)}
+              >
+                <option value="ALL">Все корпуса</option>
+                {blocks
+                  .filter(b => selectedProject === 'ALL' || b.projectId === selectedProject)
+                  .map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.number}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {/* Тип помещения - RPT-002 */}
+          {activeReportId === 'RPT-002' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Тип помещения</label>
+              <select
+                className={styles.filterInput}
+                value={selectedUnitType}
+                onChange={e => setSelectedUnitType(e.target.value)}
+              >
+                <option value="ALL">Все типы</option>
+                {unitTypes.map(ut => (
+                  <option key={ut} value={ut}>
+                    {ut}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <button className={styles.searchBtn}>
             🔍 Сформировать
           </button>
