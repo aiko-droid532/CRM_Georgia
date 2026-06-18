@@ -184,7 +184,8 @@ export async function getDebtorsRegistryData(organizationId: string) {
         ps.amount as "overdueAmount",
         ps."dueDate" as "dueDate",
         b."projectId" as "projectId",
-        COALESCE(d."managerId", 'Не назначен') as "managerId"
+        COALESCE(d."managerId", 'Не назначен') as "managerId",
+        COALESCE(d."penaltyRate", 0.001) as "penaltyRate"
       FROM "PaymentSchedule" ps
       JOIN "Deal" d ON ps."dealId" = d.id
       JOIN "Lead" l ON d."leadId" = l.id
@@ -197,7 +198,8 @@ export async function getDebtorsRegistryData(organizationId: string) {
 
     return rawData.map(row => {
       const daysOverdue = Math.max(0, Math.floor((Date.now() - new Date(row.dueDate).getTime()) / (1000 * 60 * 60 * 24)));
-      const penalty = parseFloat((row.overdueAmount * 0.001 * daysOverdue).toFixed(2)); // Пеня 0.1% в день
+      const rate = row.penaltyRate ?? 0.001;
+      const penalty = parseFloat((row.overdueAmount * rate * daysOverdue).toFixed(2));
       return {
         ...row,
         dueDate: row.dueDate.toISOString().split('T')[0],
