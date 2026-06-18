@@ -174,19 +174,19 @@ function getChannelBySource(source: string): string {
   return 'Direct';
 }
 
-export default function ReportsClient({
-  organizationId,
-  projects,
-  managers,
-  blocks,
-  sources,
-  paymentTypes,
-  unitTypes,
-  initialData
+export default function ReportsClient({ 
+  organizationId, 
+  projects, 
+  managers, 
+  blocks, 
+  sources, 
+  paymentTypes, 
+  unitTypes, 
+  initialData 
 }: ReportsClientProps) {
   const [activeCategory, setActiveCategory] = useState('sales');
   const [activeReportId, setActiveReportId] = useState('RPT-001');
-
+  
   // Общие фильтры
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -195,7 +195,7 @@ export default function ReportsClient({
   });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedProject, setSelectedProject] = useState('ALL');
-
+  
   // Дополнительные фильтры для RPT-001 - RPT-004
   const [selectedManager, setSelectedManager] = useState('ALL');
   const [selectedSource, setSelectedSource] = useState('ALL');
@@ -232,9 +232,9 @@ export default function ReportsClient({
   };
 
   // Генерация тестовых (mock) данных для некритических отчетов
-  const mockData = useMemo(() => {
+  const mockData = useMemo<any[]>(() => {
     const today = new Date().toISOString().split('T')[0];
-
+    
     switch (activeReportId) {
       case 'RPT-005':
         return [
@@ -328,7 +328,7 @@ export default function ReportsClient({
   }, [activeReportId]);
 
   // Обработка реальных данных для MVP-1 критических отчетов
-  const activeReportData = useMemo(() => {
+  const activeReportData = useMemo<any[]>(() => {
     if (!activeReport.isCritical) {
       return mockData;
     }
@@ -336,7 +336,7 @@ export default function ReportsClient({
     switch (activeReport.id) {
       case 'RPT-001': { // Воронка продаж
         const isPipeline = funnelViewMode === 'pipeline';
-
+        
         if (isPipeline) {
           // Фильтрация текущего пайплайна сделок
           const filtered = initialData.funnelData.filter((row: any) => {
@@ -377,10 +377,10 @@ export default function ReportsClient({
             const name = STAGE_TRANSLATIONS[stage] || stage;
             const amountUsd = stats.amount;
             const amountGel = stats.amount * 2.7; // Курс GEL к USD
-
+            
             const convPrev = prevCount > 0 ? parseFloat(((stats.count / prevCount) * 100).toFixed(1)) : (idx === 0 ? 100 : 0);
             const convEntry = entryCount > 0 ? parseFloat(((stats.count / entryCount) * 100).toFixed(1)) : 0;
-
+            
             prevCount = stats.count;
 
             return {
@@ -463,7 +463,7 @@ export default function ReportsClient({
 
         // Группируем выигранные продажи по ЖК
         const projectsMap: Record<string, { projectName: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number; pipelineWeightedRevenue: number }> = {};
-
+        
         filteredSales.forEach((row: any) => {
           if (!projectsMap[row.projectId]) {
             projectsMap[row.projectId] = {
@@ -490,7 +490,7 @@ export default function ReportsClient({
           const prob = STAGE_PROBABILITIES[row.stage] || 0;
           const weightedAmount = row.amount * prob;
           const projId = row.projectId;
-
+          
           if (projectsMap[projId]) {
             projectsMap[projId].pipelineWeightedRevenue += weightedAmount;
           } else {
@@ -535,7 +535,7 @@ export default function ReportsClient({
         });
 
         const managersMap: Record<string, { name: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number }> = {};
-
+        
         filteredSales.forEach((row: any) => {
           const mgr = row.managerId;
           if (!managersMap[mgr]) {
@@ -558,7 +558,7 @@ export default function ReportsClient({
           const unitPerf = ((m.soldUnits / m.targetUnits) * 100).toFixed(1) + '%';
           const revPerf = ((m.actualRevenue / m.targetRevenue) * 100).toFixed(1) + '%';
           const kpiStatus = m.actualRevenue >= m.targetRevenue ? 'Выполнен ✅' : 'В процессе ⏳';
-
+          
           return {
             'Рейтинг': idx + 1,
             'Менеджер': m.name,
@@ -871,7 +871,7 @@ export default function ReportsClient({
 
     // Создаем рабочий лист Excel из массива объектов
     const worksheet = XLSX.utils.json_to_sheet(activeReportData);
-
+    
     // Подгоняем авто-ширину для колонок
     const colWidths = Object.keys(activeReportData[0]).map(key => {
       const maxLen = activeReportData.reduce((max, row) => {
@@ -896,7 +896,7 @@ export default function ReportsClient({
       {/* Левый рубрикатор отчетов */}
       <aside className={styles.sidebar}>
         <div className={styles.sidebarTitle}>📊 Каталог отчетов</div>
-
+        
         {CATEGORIES.map(cat => (
           <div key={cat.id} className={styles.categoryBlock}>
             <div className={styles.categoryHeader}>{cat.name}</div>
@@ -1219,8 +1219,8 @@ export default function ReportsClient({
                         const val = row[header];
                         return (
                           <td key={header}>
-                            {typeof val === 'number' && header.includes('($)')
-                              ? `$${val.toLocaleString()}`
+                            {typeof val === 'number' && header.includes('($)') 
+                              ? `$${val.toLocaleString()}` 
                               : typeof val === 'number' && header.includes('(GEL)')
                               ? `₾${val.toLocaleString()}`
                               : val
