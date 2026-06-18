@@ -2,6 +2,7 @@ import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth';
 import {
   getFunnelReportData,
+  getDealTransitions,
   getProjectSalesReportData,
   getManagerSalesReportData,
   getSalesCashFlowData,
@@ -9,7 +10,12 @@ import {
   getDebtorsRegistryData,
   getManagerKpiData,
   getMarketingChannelsData,
-  getProjectsList
+  getProjectsList,
+  getManagersList,
+  getBlocksList,
+  getSourcesList,
+  getPaymentTypesList,
+  getUnitTypesList
 } from '@/app/actions/reports';
 import ReportsClient from './ReportsClient';
 
@@ -34,8 +40,9 @@ export default async function ReportsPage({
     }
   }
 
-  // Загружаем данные для критических отчетов и список ЖК
+  // Загружаем данные для отчетов
   const funnelData = await getFunnelReportData(organizationId);
+  const dealTransitions = await getDealTransitions(organizationId);
   const projectSales = await getProjectSalesReportData(organizationId);
   const managerSales = await getManagerSalesReportData(organizationId);
   const cashFlow = await getSalesCashFlowData(organizationId);
@@ -43,14 +50,27 @@ export default async function ReportsPage({
   const debtors = await getDebtorsRegistryData(organizationId);
   const managerKpi = await getManagerKpiData(organizationId);
   const marketingChannels = await getMarketingChannelsData(organizationId);
+
+  // Загружаем динамические справочники для фильтров
   const projects = await getProjectsList(organizationId);
+  const managers = await getManagersList(organizationId);
+  const blocks = await getBlocksList(organizationId);
+  const sources = await getSourcesList(organizationId);
+  const paymentTypes = await getPaymentTypesList(organizationId);
+  const unitTypes = await getUnitTypesList(organizationId);
 
   return (
     <ReportsClient
       organizationId={organizationId}
       projects={projects}
+      managers={managers}
+      blocks={blocks}
+      sources={sources}
+      paymentTypes={paymentTypes}
+      unitTypes={unitTypes}
       initialData={{
         funnelData,
+        dealTransitions,
         projectSales,
         managerSales,
         cashFlow,
