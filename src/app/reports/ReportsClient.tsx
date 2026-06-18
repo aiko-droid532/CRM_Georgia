@@ -304,7 +304,7 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           return true;
         });
         return filtered.map((row: any) => ({
-          'Сделка': `DEAL-${row.dealId.substring(0, 8)}`,
+          'Сделка': `#${row.dealId.substring(0, 8).toUpperCase()}`,
           'Клиент': row.clientName,
           'Квартира': `№${row.unitNumber}`,
           'Сумма договора ($)': row.contractAmount,
@@ -322,7 +322,7 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           return true;
         });
         return filtered.map((row: any) => ({
-          'Сделка': `DEAL-${row.dealId.substring(0, 8)}`,
+          'Сделка': `#${row.dealId.substring(0, 8).toUpperCase()}`,
           'Клиент': row.clientName,
           'Квартира': `№${row.unitNumber}`,
           'Сумма к оплате ($)': row.scheduledAmount,
@@ -351,7 +351,7 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           const d = row.daysOverdue;
           const bucket = d <= 30 ? '1–30 дней' : d <= 60 ? '31–60 дней' : d <= 90 ? '61–90 дней' : '90+ дней';
           return {
-            'Сделка': `DEAL-${row.dealId.substring(0, 8)}`,
+            'Сделка': `#${row.dealId.substring(0, 8).toUpperCase()}`,
             'Клиент': row.clientName,
             'Телефон': row.clientPhone,
             'Квартира': `№${row.unitNumber}`,
@@ -444,6 +444,45 @@ export default function ReportsClient({ organizationId, projects, initialData }:
     return Object.keys(activeReportData[0]);
   }, [activeReportData]);
 
+  // Сводные карточки KPI над таблицей
+  const summaryCards = useMemo(() => {
+    if (activeReportData.length === 0) return [];
+
+    if (activeReportId === 'RPT-008') {
+      let totalScheduled = 0, totalPaid = 0, countOverdue = 0, countPending = 0;
+      activeReportData.forEach(row => {
+        totalScheduled += Number(row['Сумма к оплате ($)']) || 0;
+        totalPaid += Number(row['Оплачено факт ($)']) || 0;
+        if (row['Статус оплат'] === 'Просрочено') countOverdue++;
+        if (row['Статус оплат'] === 'Ожидается') countPending++;
+      });
+      const paidPct = totalScheduled > 0 ? ((totalPaid / totalScheduled) * 100).toFixed(1) + '%' : '0%';
+      return [
+        { label: 'Всего платежей', value: activeReportData.length.toString(), subtext: `По графику: $${totalScheduled.toLocaleString()}`, icon: '📋' },
+        { label: 'Поступило оплат', value: `$${totalPaid.toLocaleString()}`, subtext: `Исполнено: ${paidPct}`, icon: '✅' },
+        { label: 'Просрочено', value: `${countOverdue} шт.`, subtext: `Ожидается ещё: ${countPending} шт.`, icon: '🔴' },
+      ];
+    }
+
+    if (activeReportId === 'RPT-009') {
+      let totalDebt = 0, totalPenalty = 0, totalOwed = 0, maxDays = 0;
+      activeReportData.forEach(row => {
+        totalDebt += Number(row['Сумма долга ($)']) || 0;
+        totalPenalty += Number(row['Начислено пени ($)']) || 0;
+        totalOwed += Number(row['Итого к оплате ($)']) || 0;
+        const d = Number(row['Дней просрочки']) || 0;
+        if (d > maxDays) maxDays = d;
+      });
+      return [
+        { label: 'Должников', value: activeReportData.length.toString(), subtext: `Макс. просрочка: ${maxDays} дн.`, icon: '⚠️' },
+        { label: 'Сумма основного долга', value: `$${totalDebt.toLocaleString()}`, subtext: 'По всем просрочкам', icon: '💸' },
+        { label: 'Начислено пени', value: `$${totalPenalty.toLocaleString()}`, subtext: `Итого к взысканию: $${totalOwed.toLocaleString()}`, icon: '📌' },
+      ];
+    }
+
+    return [];
+  }, [activeReportId, activeReportData]);
+
   // Выгрузка в Excel с помощью библиотеки xlsx
   const handleDownloadExcel = () => {
     if (activeReportData.length === 0) {
@@ -511,9 +550,14 @@ export default function ReportsClient({ organizationId, projects, initialData }:
             </h1>
             <p className={styles.reportDescription}>{activeReport.description}</p>
           </div>
-          <button className={styles.excelBtn} onClick={handleDownloadExcel}>
-            📥 Скачать в Excel
-          </button>
+          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexShrink: 0 }}>
+            <button className={styles.searchBtn} onClick={() => setReportGenerated(true)}>
+              🔍 Сформировать
+            </button>
+            <button className={styles.excelBtn} onClick={handleDownloadExcel}>
+              📥 Скачать в Excel
+            </button>
+          </div>
         </header>
 
         {/* Панель фильтров */}
@@ -606,6 +650,27 @@ export default function ReportsClient({ organizationId, projects, initialData }:
             🔍 Сформировать
           </button>
         </section>
+
+        {/* Сводные KPI-карточки для RPT-008 и RPT-009 */}
+        {reportGenerated && summaryCards.length > 0 && (
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
+            {summaryCards.map((card, i) => (
+              <div key={i} style={{
+                flex: 1,
+                background: 'white',
+                borderRadius: '16px',
+                padding: '20px 24px',
+                border: '1px solid #e2e8f0',
+                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
+              }}>
+                <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>{card.icon}</div>
+                <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', marginBottom: '4px' }}>{card.label}</div>
+                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>{card.value}</div>
+                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{card.subtext}</div>
+              </div>
+            ))}
+          </div>
+        )}
 
         {/* Таблица результатов */}
         <section className={styles.tableCard}>
