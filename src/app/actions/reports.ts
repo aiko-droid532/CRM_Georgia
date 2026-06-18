@@ -22,7 +22,7 @@ export async function getFunnelReportData(organizationId: string) {
       LEFT JOIN "Block" b ON u."blockId" = b.id
       WHERE d."organizationId" = ${organizationId}
     `;
-    
+
     return rawData.map(row => ({
       dealId: row.dealId,
       stage: row.stage,
@@ -256,7 +256,7 @@ export async function getDebtorsRegistryData(organizationId: string) {
     return rawData.map(row => {
       const daysOverdue = Math.max(0, Math.floor((Date.now() - new Date(row.dueDate).getTime()) / (1000 * 60 * 60 * 24)));
       const rate = row.penaltyRate ?? 0.001;
-      const penalty = parseFloat((row.overdueAmount * rate * daysOverdue).toFixed(2));
+      const penalty = parseFloat((row.overdueAmount * rate * daysOverdue).toFixed(2)); // Пеня по ставке из договора
       return {
         ...row,
         dueDate: row.dueDate.toISOString().split('T')[0],

@@ -53,8 +53,14 @@ const CATEGORIES = [
 interface ReportsClientProps {
   organizationId: string;
   projects: { id: string; name: string }[];
+  managers: string[];
+  blocks: { id: string; number: string; projectId: string }[];
+  sources: string[];
+  paymentTypes: string[];
+  unitTypes: string[];
   initialData: {
     funnelData: any[];
+    dealTransitions: any[];
     projectSales: any[];
     managerSales: any[];
     cashFlow: any[];
@@ -65,18 +71,140 @@ interface ReportsClientProps {
   };
 }
 
-export default function ReportsClient({ organizationId, projects, initialData }: ReportsClientProps) {
+const CHANNELS = ['Social Media', 'Search Engine', 'Messenger', 'Portal', 'Direct'];
+
+const CHANNEL_TRANSLATIONS: Record<string, string> = {
+  'Social Media': 'Социальные сети',
+  'Search Engine': 'Поисковые системы',
+  'Messenger': 'Мессенджеры',
+  'Portal': 'Порталы недвижимости',
+  'Direct': 'Прямые переходы'
+};
+
+const UNIT_TYPE_TRANSLATIONS: Record<string, string> = {
+  'Apartment': 'Квартира',
+  'APARTMENT': 'Квартира',
+  'Commercial': 'Коммерческое помещение',
+  'COMMERCIAL': 'Коммерческое помещение',
+  'Penthouse': 'Пентхаус',
+  'PENTHOUSE': 'Пентхаус',
+  'Office': 'Офис',
+  'OFFICE': 'Офис',
+  'Parking': 'Паркинг',
+  'PARKING': 'Паркинг',
+  'Garage': 'Гараж',
+  'GARAGE': 'Гараж'
+};
+
+const PAYMENT_TYPE_TRANSLATIONS: Record<string, string> = {
+  'Installment': 'Рассрочка',
+  'INSTALLMENT': 'Рассрочка',
+  'Cash': 'Наличные',
+  'CASH': 'Наличные',
+  'Mortgage': 'Ипотека',
+  'MORTGAGE': 'Ипотека',
+  'Standard': 'Стандартный платеж',
+  'STANDARD': 'Стандартный платеж',
+  'None': 'Не указана',
+  'NONE': 'Не указана'
+};
+
+const STAGE_ORDER = [
+  'NEW_LEAD',
+  'CLARIFICATION',
+  'CALL',
+  'SECOND_CALL',
+  'THIRD_CALL',
+  'CONSULTATION',
+  'PRE_RESERVATION',
+  'RESERVATION',
+  'CONTRACT_PREPARATION',
+  'CONTRACT',
+  'CLIENT_CONFIRMATION',
+  'WAITING_PAYMENT',
+  'PAYMENT_CONFIRMED',
+  'SUCCESS'
+];
+
+const STAGE_TRANSLATIONS: Record<string, string> = {
+  'NEW_LEAD': 'Новый интерес',
+  'CLARIFICATION': 'Уточнение деталей',
+  'CALL': 'Первый звонок',
+  'SECOND_CALL': 'Повторный звонок',
+  'THIRD_CALL': 'Решающий звонок',
+  'CONSULTATION': 'Консультация',
+  'PRE_RESERVATION': 'Предбронь',
+  'RESERVATION': 'Устная бронь',
+  'CONTRACT_PREPARATION': 'Подготовка договора',
+  'CONTRACT': 'Договор подписан',
+  'CLIENT_CONFIRMATION': 'Подтверждение клиента',
+  'WAITING_PAYMENT': 'Ожидание оплаты',
+  'PAYMENT_CONFIRMED': 'Оплата подтверждена',
+  'SUCCESS': 'Успешно завершено',
+  'FAILED': 'Провал',
+  'CANCELLED': 'Отменено'
+};
+
+const STAGE_PROBABILITIES: Record<string, number> = {
+  'NEW_LEAD': 0.05,
+  'CLARIFICATION': 0.10,
+  'CALL': 0.10,
+  'SECOND_CALL': 0.15,
+  'THIRD_CALL': 0.20,
+  'CONSULTATION': 0.25,
+  'PRE_RESERVATION': 0.40,
+  'RESERVATION': 0.60,
+  'CONTRACT_PREPARATION': 0.80,
+  'CONTRACT': 0.90,
+  'CLIENT_CONFIRMATION': 0.90,
+  'WAITING_PAYMENT': 0.95,
+  'PAYMENT_CONFIRMED': 0.98,
+  'SUCCESS': 1.00,
+  'FAILED': 0.00,
+  'CANCELLED': 0.00
+};
+
+function getChannelBySource(source: string): string {
+  if (!source) return 'Direct';
+  const s = source.toLowerCase();
+  if (s.includes('instagram') || s.includes('facebook') || s.includes('fb') || s.includes('insta')) return 'Social Media';
+  if (s.includes('google') || s.includes('yandex') || s.includes('seo') || s.includes('search')) return 'Search Engine';
+  if (s.includes('telegram') || s.includes('tg') || s.includes('whatsapp') || s.includes('viber')) return 'Messenger';
+  if (s.includes('ge') || s.includes('portal') || s.includes('myhome') || s.includes('ss')) return 'Portal';
+  return 'Direct';
+}
+
+export default function ReportsClient({
+  organizationId,
+  projects,
+  managers,
+  blocks,
+  sources,
+  paymentTypes,
+  unitTypes,
+  initialData
+}: ReportsClientProps) {
   const [activeCategory, setActiveCategory] = useState('sales');
   const [activeReportId, setActiveReportId] = useState('RPT-001');
 
-  // Фильтры
+  // Общие фильтры
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
-    d.setDate(d.getDate() - 30);
+    d.setDate(d.getDate() - 90);
     return d.toISOString().split('T')[0];
   });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedProject, setSelectedProject] = useState('ALL');
+
+  // Дополнительные фильтры для RPT-001 - RPT-004
+  const [selectedManager, setSelectedManager] = useState('ALL');
+  const [selectedSource, setSelectedSource] = useState('ALL');
+  const [selectedChannel, setSelectedChannel] = useState('ALL');
+  const [selectedPaymentType, setSelectedPaymentType] = useState('ALL');
+  const [selectedClientType, setSelectedClientType] = useState('ALL'); // 'ALL' | 'VIP' | 'REGULAR'
+  const [selectedBlock, setSelectedBlock] = useState('ALL');
+  const [selectedUnitType, setSelectedUnitType] = useState('ALL');
+  const [funnelViewMode, setFunnelViewMode] = useState('pipeline'); // 'pipeline' | 'conversion'
 
   // Фильтры для RPT-008
   const [selectedPaymentStatus, setSelectedPaymentStatus] = useState('ALL'); // ALL | PAID | OVERDUE | PENDING
@@ -85,7 +213,7 @@ export default function ReportsClient({ organizationId, projects, initialData }:
   const [selectedOverdueBucket, setSelectedOverdueBucket] = useState('ALL'); // ALL | 1-30 | 30-60 | 60-90 | 90+
   const [selectedDebtManager, setSelectedDebtManager] = useState('ALL');
 
-  // Стейт для «Сформировать» — таблица показывается только после нажатия
+  // Стейт для «Сформировать» — таблица и KPI-карточки показываются после нажатия
   const [reportGenerated, setReportGenerated] = useState(false);
 
   // Получаем текущий выбранный отчет
@@ -139,8 +267,8 @@ export default function ReportsClient({ organizationId, projects, initialData }:
         ];
       case 'RPT-012':
         return [
-          { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Банк': 'TBC Bank', 'Сумма ипотеки ($)': 450000, 'Статус одобрения': 'Одобрено банком' },
-          { 'Сделка': 'DEAL-9051', 'Клиент': 'Смирнов Д.', 'Банк': 'Bank of Georgia', 'Сумма ипотеки ($)': 310000, 'Статус одобрения': 'На рассмотрении' }
+          { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Банк': 'ТБС Банк', 'Сумма ипотеки ($)': 450000, 'Статус одобрения': 'Одобрено банком' },
+          { 'Сделка': 'DEAL-9051', 'Клиент': 'Смирнов Д.', 'Банк': 'Банк Грузии', 'Сумма ипотеки ($)': 310000, 'Статус одобрения': 'На рассмотрении' }
         ];
       case 'RPT-013':
         return [
@@ -149,13 +277,13 @@ export default function ReportsClient({ organizationId, projects, initialData }:
         ];
       case 'RPT-014':
         return [
-          { 'Сделка': 'DEAL-8991', 'Клиент': 'Оганесян Г.', 'Банк-депозитарий': 'TBC', 'Сумма на эскроу ($)': 145000, 'Этап раскрытия': 'Каркас здания завершен (30% раскрыто)' }
+          { 'Сделка': 'DEAL-8991', 'Клиент': 'Оганесян Г.', 'Банк-депозитарий': 'ТБС Банк', 'Сумма на эскроу ($)': 145000, 'Этап раскрытия': 'Каркас здания завершен (30% раскрыто)' }
         ];
       case 'RPT-015':
         return [
-          { 'Квартира': '№102', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 3, 'Статус': 'FREE (Свободно)', 'Цена ($)': 97000 },
-          { 'Квартира': '№105', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 62.0, 'Этаж': 3, 'Статус': 'FREE (Свободно)', 'Цена ($)': 124000 },
-          { 'Квартира': '№202', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 4, 'Статус': 'FREE (Свободно)', 'Цена ($)': 99000 }
+          { 'Квартира': '№102', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 3, 'Статус': 'Свободно', 'Цена ($)': 97000 },
+          { 'Квартира': '№105', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 62.0, 'Этаж': 3, 'Статус': 'Свободно', 'Цена ($)': 124000 },
+          { 'Квартира': '№202', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Пло销 (м²)': 48.5, 'Этаж': 4, 'Статус': 'Свободно', 'Цена ($)': 99000 }
         ];
       case 'RPT-016':
         return [
@@ -169,8 +297,8 @@ export default function ReportsClient({ organizationId, projects, initialData }:
         ];
       case 'RPT-018':
         return [
-          { 'ЖК': 'Skyline Residence', 'Тип': 'Apartment', 'Площадь (м²)': 52.4, 'Цена ($)': 104800, 'Этаж': 4, 'Вид из окна': 'Море' },
-          { 'ЖК': 'Skyline Residence', 'Тип': 'Apartment', 'Площадь (м²)': 62.0, 'Цена ($)': 124000, 'Этаж': 3, 'Вид из окна': 'Парк' }
+          { 'ЖК': 'Skyline Residence', 'Тип': 'Квартира', 'Площадь (м²)': 52.4, 'Цена ($)': 104800, 'Этаж': 4, 'Вид из окна': 'Море' },
+          { 'ЖК': 'Skyline Residence', 'Тип': 'Квартира', 'Площадь (м²)': 62.0, 'Цена ($)': 124000, 'Этаж': 3, 'Вид из окна': 'Парк' }
         ];
       case 'RPT-019':
         return [
@@ -191,8 +319,8 @@ export default function ReportsClient({ organizationId, projects, initialData }:
         ];
       case 'RPT-025':
         return [
-          { 'Квартира': '№303', 'Клиент': 'Кайсар Бейсекбаев', 'Дата брони': today, 'Тип': 'Soft Booking', 'Статус': 'Снята (Сделка оформлена)' },
-          { 'Квартира': '№110', 'Клиент': 'Смирнова О.', 'Дата брони': today, 'Тип': 'Soft Booking', 'Статус': 'Активна (Осталось 14 часов)' }
+          { 'Квартира': '№303', 'Клиент': 'Кайсар Бейсекбаев', 'Дата брони': today, 'Тип': 'Временная бронь', 'Статус': 'Снята (Сделка оформлена)' },
+          { 'Квартира': '№110', 'Клиент': 'Смирнова О.', 'Дата брони': today, 'Тип': 'Временная бронь', 'Статус': 'Активна (Осталось 14 часов)' }
         ];
       default:
         return [];
@@ -207,109 +335,264 @@ export default function ReportsClient({ organizationId, projects, initialData }:
 
     switch (activeReport.id) {
       case 'RPT-001': { // Воронка продаж
-        const filtered = initialData.funnelData.filter((row: any) => {
-          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          if (startDate && row.createdAt && row.createdAt < startDate) return false;
-          if (endDate && row.createdAt && row.createdAt > endDate) return false;
-          return true;
-        });
+        const isPipeline = funnelViewMode === 'pipeline';
 
-        const stages: Record<string, { count: number; amount: number }> = {};
-        filtered.forEach((row: any) => {
-          const stage = row.stage || 'NEW_LEAD';
-          if (!stages[stage]) {
-            stages[stage] = { count: 0, amount: 0 };
-          }
-          stages[stage].count += 1;
-          stages[stage].amount += row.amount;
-        });
+        if (isPipeline) {
+          // Фильтрация текущего пайплайна сделок
+          const filtered = initialData.funnelData.filter((row: any) => {
+            if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+            if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+            if (selectedSource !== 'ALL' && row.source !== selectedSource) return false;
+            if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return false;
+            if (selectedPaymentType !== 'ALL' && row.paymentType !== selectedPaymentType) return false;
+            if (selectedClientType !== 'ALL') {
+              if (selectedClientType === 'VIP' && !row.isVip) return false;
+              if (selectedClientType === 'REGULAR' && row.isVip) return false;
+            }
+            if (startDate && row.createdAt && row.createdAt < startDate) return false;
+            if (endDate && row.createdAt && row.createdAt > endDate) return false;
+            return true;
+          });
 
-        return Object.entries(stages).map(([stage, data]) => ({
-          'Этап воронки': stage,
-          'Количество сделок': data.count,
-          'Сумма на этапе ($)': data.amount
-        }));
+          // Агрегируем по этапам воронки
+          const stagesMap: Record<string, { count: number; amount: number }> = {};
+          STAGE_ORDER.forEach(st => {
+            stagesMap[st] = { count: 0, amount: 0 };
+          });
+
+          filtered.forEach((row: any) => {
+            const stage = row.stage;
+            if (stagesMap[stage] !== undefined) {
+              stagesMap[stage].count += 1;
+              stagesMap[stage].amount += row.amount;
+            }
+          });
+
+          // Рассчитываем конверсии
+          let prevCount = 0;
+          const entryCount = filtered.length;
+
+          return STAGE_ORDER.map((stage, idx) => {
+            const stats = stagesMap[stage];
+            const name = STAGE_TRANSLATIONS[stage] || stage;
+            const amountUsd = stats.amount;
+            const amountGel = stats.amount * 2.7; // Курс GEL к USD
+
+            const convPrev = prevCount > 0 ? parseFloat(((stats.count / prevCount) * 100).toFixed(1)) : (idx === 0 ? 100 : 0);
+            const convEntry = entryCount > 0 ? parseFloat(((stats.count / entryCount) * 100).toFixed(1)) : 0;
+
+            prevCount = stats.count;
+
+            return {
+              'Этап воронки': name,
+              'Количество сделок': stats.count,
+              'Сумма (USD)': Math.round(amountUsd),
+              'Сумма (GEL)': Math.round(amountGel),
+              'Конверсия от предыд. этапа (%)': convPrev + '%',
+              'Конверсия от общего входа (%)': convEntry + '%'
+            };
+          });
+        } else {
+          // Исторические переходы из AuditLog (Conversion view)
+          const filteredTransitions = initialData.dealTransitions.filter((row: any) => {
+            if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+            if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+            if (selectedSource !== 'ALL' && row.source !== selectedSource) return false;
+            if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return false;
+            if (selectedPaymentType !== 'ALL' && row.paymentType !== selectedPaymentType) return false;
+            if (selectedClientType !== 'ALL') {
+              if (selectedClientType === 'VIP' && !row.isVip) return false;
+              if (selectedClientType === 'REGULAR' && row.isVip) return false;
+            }
+            if (startDate && row.createdAt && row.createdAt < startDate) return false;
+            if (endDate && row.createdAt && row.createdAt > endDate) return false;
+            return true;
+          });
+
+          // Считаем уникальные сделки, прошедшие через каждый статус в выбранном периоде
+          const stagesMap: Record<string, Set<string>> = {};
+          const amountsMap: Record<string, number> = {};
+          STAGE_ORDER.forEach(st => {
+            stagesMap[st] = new Set<string>();
+            amountsMap[st] = 0;
+          });
+
+          filteredTransitions.forEach((row: any) => {
+            const toStage = row.toStage;
+            if (stagesMap[toStage] !== undefined) {
+              stagesMap[toStage].add(row.dealId);
+              amountsMap[toStage] += row.amount;
+            }
+          });
+
+          let prevCount = 0;
+          const entryCount = filteredTransitions.reduce((acc: Set<string>, row: any) => acc.add(row.dealId), new Set<string>()).size;
+
+          return STAGE_ORDER.map((stage, idx) => {
+            const count = stagesMap[stage].size;
+            const name = STAGE_TRANSLATIONS[stage] || stage;
+            const amountUsd = amountsMap[stage];
+            const amountGel = amountUsd * 2.7;
+
+            const convPrev = prevCount > 0 ? parseFloat(((count / prevCount) * 100).toFixed(1)) : (idx === 0 ? 100 : 0);
+            const convEntry = entryCount > 0 ? parseFloat(((count / entryCount) * 100).toFixed(1)) : 0;
+
+            prevCount = count;
+
+            return {
+              'Этап воронки': name,
+              'Уникальных переходов': count,
+              'Оборот этапа (USD)': Math.round(amountUsd),
+              'Оборот этапа (GEL)': Math.round(amountGel),
+              'Конверсия от предыд. этапа (%)': convPrev + '%',
+              'Конверсия от входа воронки (%)': convEntry + '%'
+            };
+          });
+        }
       }
 
       case 'RPT-002': { // План/факт по ЖК
-        const filtered = initialData.projectSales.filter((row: any) => {
+        const filteredSales = initialData.projectSales.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockId !== selectedBlock) return false;
+          if (selectedUnitType !== 'ALL' && row.unitType !== selectedUnitType) return false;
           if (startDate && row.wonAt && row.wonAt < startDate) return false;
           if (endDate && row.wonAt && row.wonAt > endDate) return false;
           return true;
         });
 
-        const projectsMap: Record<string, { projectName: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number }> = {};
-        filtered.forEach((row: any) => {
+        // Группируем выигранные продажи по ЖК
+        const projectsMap: Record<string, { projectName: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number; pipelineWeightedRevenue: number }> = {};
+
+        filteredSales.forEach((row: any) => {
           if (!projectsMap[row.projectId]) {
             projectsMap[row.projectId] = {
               projectName: row.projectName,
               soldUnits: 0,
               actualRevenue: 0,
               targetUnits: row.targetUnits || 10,
-              targetRevenue: row.targetRevenue || 1500000.00
+              targetRevenue: row.targetRevenue || 1500000.00,
+              pipelineWeightedRevenue: 0
             };
           }
           projectsMap[row.projectId].soldUnits += 1;
           projectsMap[row.projectId].actualRevenue += row.price;
         });
 
-        return Object.values(projectsMap).map(p => ({
-          'Жилой Комплекс': p.projectName,
-          'Продано (Юнитов)': p.soldUnits,
-          'План (Юнитов)': p.targetUnits,
-          'Выполнение (%)': ((p.soldUnits / p.targetUnits) * 100).toFixed(1) + '%',
-          'Выручка Факт ($)': p.actualRevenue,
-          'Выручка План ($)': p.targetRevenue
-        }));
+        // Считаем взвешенный пайплайн для прогноза закрытия периода по каждому ЖК
+        const activeDeals = initialData.funnelData.filter((row: any) => {
+          if (row.stage === 'SUCCESS' || row.stage === 'FAILED' || row.stage === 'CANCELLED') return false;
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          return true;
+        });
+
+        activeDeals.forEach((row: any) => {
+          const prob = STAGE_PROBABILITIES[row.stage] || 0;
+          const weightedAmount = row.amount * prob;
+          const projId = row.projectId;
+
+          if (projectsMap[projId]) {
+            projectsMap[projId].pipelineWeightedRevenue += weightedAmount;
+          } else {
+            // Если по проекту не было успешных сделок, но есть пайплайн
+            const projectObj = projects.find(p => p.id === projId);
+            if (projectObj) {
+              projectsMap[projId] = {
+                projectName: projectObj.name,
+                soldUnits: 0,
+                actualRevenue: 0,
+                targetUnits: 10,
+                targetRevenue: 1500000.00,
+                pipelineWeightedRevenue: weightedAmount
+              };
+            }
+          }
+        });
+
+        return Object.values(projectsMap).map(p => {
+          const forecast = p.actualRevenue + p.pipelineWeightedRevenue;
+          return {
+            'Жилой Комплекс': p.projectName,
+            'Продано (Юнитов)': p.soldUnits,
+            'План (Юнитов)': p.targetUnits,
+            'Выполнение по юнитам (%)': ((p.soldUnits / p.targetUnits) * 100).toFixed(1) + '%',
+            'Выручка Факт ($)': Math.round(p.actualRevenue),
+            'Выручка План ($)': Math.round(p.targetRevenue),
+            'Выполнение по выручке (%)': ((p.actualRevenue / p.targetRevenue) * 100).toFixed(1) + '%',
+            'Прогноз закрытия периода ($)': Math.round(forecast),
+            'Отношение прогноза к плану (%)': ((forecast / p.targetRevenue) * 100).toFixed(1) + '%'
+          };
+        });
       }
 
       case 'RPT-003': { // План/факт по менеджерам
-        const filtered = initialData.managerSales.filter((row: any) => {
+        const filteredSales = initialData.managerSales.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
           if (startDate && row.wonAt && row.wonAt < startDate) return false;
           if (endDate && row.wonAt && row.wonAt > endDate) return false;
           return true;
         });
 
-        const managers: Record<string, { name: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number }> = {};
-        filtered.forEach((row: any) => {
-          if (!managers[row.managerId]) {
-            managers[row.managerId] = {
-              name: row.managerId,
+        const managersMap: Record<string, { name: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number }> = {};
+
+        filteredSales.forEach((row: any) => {
+          const mgr = row.managerId;
+          if (!managersMap[mgr]) {
+            managersMap[mgr] = {
+              name: mgr,
               soldUnits: 0,
               actualRevenue: 0,
               targetUnits: row.targetUnits || 5,
               targetRevenue: row.targetRevenue || 750000.00
             };
           }
-          managers[row.managerId].soldUnits += 1;
-          managers[row.managerId].actualRevenue += row.price;
+          managersMap[mgr].soldUnits += 1;
+          managersMap[mgr].actualRevenue += row.price;
         });
 
-        return Object.values(managers).map(m => ({
-          'Менеджер': m.name,
-          'Продано (Юнитов)': m.soldUnits,
-          'План (Юнитов)': m.targetUnits,
-          'Выручка Факт ($)': m.actualRevenue,
-          'Выручка План ($)': m.targetRevenue
-        }));
+        // Сортируем менеджеров по объему продаж (рейтинг)
+        const sortedManagers = Object.values(managersMap).sort((a, b) => b.actualRevenue - a.actualRevenue);
+
+        return sortedManagers.map((m, idx) => {
+          const unitPerf = ((m.soldUnits / m.targetUnits) * 100).toFixed(1) + '%';
+          const revPerf = ((m.actualRevenue / m.targetRevenue) * 100).toFixed(1) + '%';
+          const kpiStatus = m.actualRevenue >= m.targetRevenue ? 'Выполнен ✅' : 'В процессе ⏳';
+
+          return {
+            'Рейтинг': idx + 1,
+            'Менеджер': m.name,
+            'Продано (Юнитов)': m.soldUnits,
+            'План (Юнитов)': m.targetUnits,
+            'Выполнение (Юниты)': unitPerf,
+            'Выручка Факт ($)': Math.round(m.actualRevenue),
+            'Выручка План ($)': Math.round(m.targetRevenue),
+            'Выполнение (Выручка)': revPerf,
+            'Соответствие KPI': kpiStatus
+          };
+        });
       }
 
       case 'RPT-004': { // Сводный отчет по продажам
         const filtered = initialData.cashFlow.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+          if (selectedPaymentType !== 'ALL' && row.paymentType !== selectedPaymentType) return false;
           if (startDate && row.createdAt && row.createdAt < startDate) return false;
           if (endDate && row.createdAt && row.createdAt > endDate) return false;
           return true;
         });
+
         return filtered.map((row: any) => ({
-          'Сделка': `#${row.dealId.substring(0, 8).toUpperCase()}`,
+          'Сделка': row.dealId.startsWith('test') ? '#Тестовая сделка' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
           'Клиент': row.clientName,
           'Квартира': `№${row.unitNumber}`,
-          'Сумма договора ($)': row.contractAmount,
-          'Оплачено факт ($)': row.paidAmount,
-          'Осталось по графику ($)': row.pendingAmount
+          'Сумма договора ($)': Math.round(row.contractAmount),
+          'Поступило оплат ($)': Math.round(row.paidAmount),
+          'Ожидается платежей ($)': Math.round(row.pendingAmount),
+          'Схема оплаты': PAYMENT_TYPE_TRANSLATIONS[row.paymentType] || row.paymentType || 'Не указана',
+          'Менеджер': row.managerId,
+          'Дата заключения': row.createdAt
         }));
       }
 
@@ -325,9 +608,9 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           'Сделка': `#${row.dealId.substring(0, 8).toUpperCase()}`,
           'Клиент': row.clientName,
           'Квартира': `№${row.unitNumber}`,
-          'Сумма к оплате ($)': row.scheduledAmount,
+          'Сумма к оплате ($)': Math.round(row.scheduledAmount),
           'Срок оплаты': row.dueDate,
-          'Оплачено факт ($)': row.paidAmount,
+          'Оплачено факт ($)': Math.round(row.paidAmount),
           'Статус оплат': row.paymentStatus === 'PAID' ? 'Оплачено' : row.paymentStatus === 'OVERDUE' ? 'Просрочено' : 'Ожидается'
         }));
       }
@@ -356,12 +639,12 @@ export default function ReportsClient({ organizationId, projects, initialData }:
             'Телефон': row.clientPhone,
             'Квартира': `№${row.unitNumber}`,
             'Менеджер': row.managerId,
-            'Сумма долга ($)': row.overdueAmount,
+            'Сумма долга ($)': Math.round(row.overdueAmount),
             'Срок платежа': row.dueDate,
             'Дней просрочки': row.daysOverdue,
             'Бакет просрочки': bucket,
-            'Начислено пени ($)': row.penalty,
-            'Итого к оплате ($)': row.totalDebt
+            'Начислено пени ($)': Math.round(row.penalty),
+            'Итого к оплате ($)': Math.round(row.totalDebt)
           };
         });
       }
@@ -374,17 +657,17 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           return true;
         });
 
-        const managers: Record<string, { total: number; won: number; lost: number }> = {};
+        const managersMap: Record<string, { total: number; won: number; lost: number }> = {};
         filtered.forEach((row: any) => {
-          if (!managers[row.managerId]) {
-            managers[row.managerId] = { total: 0, won: 0, lost: 0 };
+          if (!managersMap[row.managerId]) {
+            managersMap[row.managerId] = { total: 0, won: 0, lost: 0 };
           }
-          managers[row.managerId].total += 1;
-          if (row.status === 'SUCCESS') managers[row.managerId].won += 1;
-          if (row.status === 'FAILED') managers[row.managerId].lost += 1;
+          managersMap[row.managerId].total += 1;
+          if (row.status === 'SUCCESS') managersMap[row.managerId].won += 1;
+          if (row.status === 'FAILED') managersMap[row.managerId].lost += 1;
         });
 
-        return Object.entries(managers).map(([managerId, stats]) => {
+        return Object.entries(managersMap).map(([managerId, stats]) => {
           const conversion = stats.total > 0 ? parseFloat(((stats.won / stats.total) * 100).toFixed(1)) : 0;
           return {
             'Менеджер': managerId,
@@ -405,19 +688,19 @@ export default function ReportsClient({ organizationId, projects, initialData }:
           return true;
         });
 
-        const channels: Record<string, { total: number; won: number; revenue: number }> = {};
+        const channelsMap: Record<string, { total: number; won: number; revenue: number }> = {};
         filtered.forEach((row: any) => {
-          if (!channels[row.source]) {
-            channels[row.source] = { total: 0, won: 0, revenue: 0 };
+          if (!channelsMap[row.source]) {
+            channelsMap[row.source] = { total: 0, won: 0, revenue: 0 };
           }
-          channels[row.source].total += 1;
+          channelsMap[row.source].total += 1;
           if (row.status === 'SUCCESS') {
-            channels[row.source].won += 1;
-            channels[row.source].revenue += row.price;
+            channelsMap[row.source].won += 1;
+            channelsMap[row.source].revenue += row.price;
           }
         });
 
-        return Object.entries(channels).map(([source, stats]) => {
+        return Object.entries(channelsMap).map(([source, stats]) => {
           const conversion = stats.total > 0 ? parseFloat(((stats.won / stats.total) * 100).toFixed(1)) : 0;
           const cost = stats.total * 150;
           const roi = cost > 0 ? (((stats.revenue - cost) / cost) * 100).toFixed(1) + '%' : '—';
@@ -426,7 +709,7 @@ export default function ReportsClient({ organizationId, projects, initialData }:
             'Привлечено лидов/сделок': stats.total,
             'Продано': stats.won,
             'Конверсия (%)': conversion + '%',
-            'Выручка ($)': stats.revenue,
+            'Выручка ($)': Math.round(stats.revenue),
             'Маркетинговый бюджет ($)': cost,
             'ROI (%)': roi
           };
@@ -436,17 +719,104 @@ export default function ReportsClient({ organizationId, projects, initialData }:
       default:
         return [];
     }
-  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager]);
+  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager]);
 
-  // Заголовки колонок таблицы на основе полученных данных
-  const tableHeaders = useMemo(() => {
-    if (activeReportData.length === 0) return [];
-    return Object.keys(activeReportData[0]);
-  }, [activeReportData]);
+  // Расчет динамических KPI показателей отчетов
+  const reportStats = useMemo(() => {
+    if (activeReportId === 'RPT-001') {
+      let totalDeals = 0;
+      let totalAmountUsd = 0;
+      let totalAmountGel = 0;
+      let successDeals = 0;
 
-  // Сводные карточки KPI над таблицей
-  const summaryCards = useMemo(() => {
-    if (activeReportData.length === 0) return [];
+      const countKey = funnelViewMode === 'pipeline' ? 'Количество сделок' : 'Уникальных переходов';
+      const usdKey = funnelViewMode === 'pipeline' ? 'Сумма (USD)' : 'Оборот этапа (USD)';
+      const gelKey = funnelViewMode === 'pipeline' ? 'Сумма (GEL)' : 'Оборот этапа (GEL)';
+
+      activeReportData.forEach(row => {
+        const count = Number(row[countKey]) || 0;
+        const usd = Number(row[usdKey]) || 0;
+        const gel = Number(row[gelKey]) || 0;
+        totalDeals += count;
+        totalAmountUsd += usd;
+        totalAmountGel += gel;
+        if (row['Этап воронки'] === STAGE_TRANSLATIONS['SUCCESS'] || row['Этап воронки'] === STAGE_TRANSLATIONS['PAYMENT_CONFIRMED']) {
+          successDeals += count;
+        }
+      });
+
+      const conversion = totalDeals > 0 ? ((successDeals / totalDeals) * 100).toFixed(1) + '%' : '0.0%';
+
+      return [
+        { label: 'Всего сделок', value: totalDeals.toString(), subtext: 'В выбранном периоде', icon: '💼' },
+        { label: 'Общий бюджет', value: `$${totalAmountUsd.toLocaleString()}`, subtext: `₾${totalAmountGel.toLocaleString()}`, icon: '💰' },
+        { label: 'Успешные сделки', value: successDeals.toString(), subtext: `Конверсия: ${conversion}`, icon: '🏆' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-002') {
+      let totalSold = 0;
+      let totalTargetUnits = 0;
+      let totalRevenueFact = 0;
+      let totalRevenuePlan = 0;
+
+      activeReportData.forEach(row => {
+        totalSold += Number(row['Продано (Юнитов)']) || 0;
+        totalTargetUnits += Number(row['План (Юнитов)']) || 0;
+        totalRevenueFact += Number(row['Выручка Факт ($)']) || 0;
+        totalRevenuePlan += Number(row['Выручка План ($)']) || 0;
+      });
+
+      const unitCompletion = totalTargetUnits > 0 ? ((totalSold / totalTargetUnits) * 100).toFixed(1) + '%' : '0.0%';
+      const revCompletion = totalRevenuePlan > 0 ? ((totalRevenueFact / totalRevenuePlan) * 100).toFixed(1) + '%' : '0.0%';
+
+      return [
+        { label: 'Продано юнитов', value: totalSold.toString(), subtext: `План: ${totalTargetUnits} (${unitCompletion})`, icon: '🏢' },
+        { label: 'Выручка Факт', value: `$${totalRevenueFact.toLocaleString()}`, subtext: `План: $${totalRevenuePlan.toLocaleString()}`, icon: '💵' },
+        { label: 'Выполнение плана', value: revCompletion, subtext: 'По сумме выручки', icon: '📈' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-003') {
+      let totalSold = 0;
+      let totalRevenue = 0;
+      let topManager = '—';
+      let maxRevenue = -1;
+
+      activeReportData.forEach(row => {
+        totalSold += Number(row['Продано (Юнитов)']) || 0;
+        const rev = Number(row['Выручка Факт ($)']) || 0;
+        totalRevenue += rev;
+        if (rev > maxRevenue) {
+          maxRevenue = rev;
+          topManager = row['Менеджер'] || '—';
+        }
+      });
+
+      return [
+        { label: 'Всего продано', value: `${totalSold} шт.`, subtext: 'Всеми менеджерами', icon: '👤' },
+        { label: 'Общая выручка', value: `$${totalRevenue.toLocaleString()}`, subtext: `В среднем: $${Math.round(activeReportData.length > 0 ? totalRevenue / activeReportData.length : 0).toLocaleString()}`, icon: '💰' },
+        { label: 'Лидер продаж', value: topManager, subtext: maxRevenue > 0 ? `Результат: $${maxRevenue.toLocaleString()}` : 'Нет сделок', icon: '👑' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-004') {
+      let totalContract = 0;
+      let totalPaid = 0;
+      let totalPending = 0;
+
+      activeReportData.forEach(row => {
+        totalContract += Number(row['Сумма договора ($)']) || 0;
+        totalPaid += Number(row['Поступило оплат ($)']) || 0;
+        totalPending += Number(row['Ожидается платежей ($)']) || 0;
+      });
+
+      return [
+        { label: 'Сумма договоров', value: `$${totalContract.toLocaleString()}`, subtext: `Всего сделок: ${activeReportData.length}`, icon: '📝' },
+        { label: 'Поступило оплат', value: `$${totalPaid.toLocaleString()}`, subtext: `Оплачено: ${totalContract > 0 ? ((totalPaid / totalContract) * 100).toFixed(1) + '%' : '0%'}`, icon: '📥' },
+        { label: 'Ожидается платежей', value: `$${totalPending.toLocaleString()}`, subtext: `Остаток: ${totalContract > 0 ? ((totalPending / totalContract) * 100).toFixed(1) + '%' : '0%'}`, icon: '⏳' }
+      ];
+    }
 
     if (activeReportId === 'RPT-008') {
       let totalScheduled = 0, totalPaid = 0, countOverdue = 0, countPending = 0;
@@ -480,8 +850,17 @@ export default function ReportsClient({ organizationId, projects, initialData }:
       ];
     }
 
-    return [];
-  }, [activeReportId, activeReportData]);
+    // Дефолтные показатели для некритических отчетов
+    return [
+      { label: 'Всего записей', value: activeReportData.length.toString(), subtext: 'В текущей таблице', icon: '📊' }
+    ];
+  }, [activeReportId, activeReportData, funnelViewMode]);
+
+  // Заголовки колонок таблицы на основе полученных данных
+  const tableHeaders = useMemo(() => {
+    if (activeReportData.length === 0) return [];
+    return Object.keys(activeReportData[0]);
+  }, [activeReportData]);
 
   // Выгрузка в Excel с помощью библиотеки xlsx
   const handleDownloadExcel = () => {
@@ -550,18 +929,32 @@ export default function ReportsClient({ organizationId, projects, initialData }:
             </h1>
             <p className={styles.reportDescription}>{activeReport.description}</p>
           </div>
-          <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexShrink: 0 }}>
-            <button className={styles.searchBtn} onClick={() => setReportGenerated(true)}>
-              🔍 Сформировать
-            </button>
+          {reportGenerated && activeReportData.length > 0 && (
             <button className={styles.excelBtn} onClick={handleDownloadExcel}>
               📥 Скачать в Excel
             </button>
-          </div>
+          )}
         </header>
 
+        {/* Карточки показателей (KPI Stat Cards) */}
+        {reportGenerated && (
+          <div className={styles.statsGrid}>
+            {reportStats.map((stat, idx) => (
+              <div key={idx} className={styles.statCard}>
+                <div className={styles.statHeader}>
+                  <span className={styles.statLabel}>{stat.label}</span>
+                  <span className={styles.statIcon}>{stat.icon}</span>
+                </div>
+                <div className={styles.statValue}>{stat.value}</div>
+                <div className={styles.statSub}>{stat.subtext}</div>
+              </div>
+            ))}
+          </div>
+        )}
+
         {/* Панель фильтров */}
-        <section className={styles.filterBar}>
+        <section className={styles.filterBar} style={{ flexWrap: 'wrap', gap: '15px' }}>
+          {/* Фильтр по датам (Период) - доступен везде */}
           <div className={styles.filterGroup}>
             <label className={styles.filterLabel}>Период С</label>
             <input
@@ -580,12 +973,17 @@ export default function ReportsClient({ organizationId, projects, initialData }:
               onChange={e => setEndDate(e.target.value)}
             />
           </div>
+
+          {/* Фильтр ЖК (Project) - доступен везде */}
           <div className={styles.filterGroup}>
             <label className={styles.filterLabel}>Проект (ЖК)</label>
             <select
               className={styles.filterInput}
               value={selectedProject}
-              onChange={e => setSelectedProject(e.target.value)}
+              onChange={e => {
+                setSelectedProject(e.target.value);
+                setSelectedBlock('ALL'); // сброс корпуса при смене ЖК
+              }}
             >
               <option value="ALL">Все ЖК</option>
               {projects.map(proj => (
@@ -595,6 +993,153 @@ export default function ReportsClient({ organizationId, projects, initialData }:
               ))}
             </select>
           </div>
+
+          {/* RPT-001 Режим воронки (Pipeline vs Conversion) */}
+          {activeReportId === 'RPT-001' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Режим воронки</label>
+              <select
+                className={styles.filterInput}
+                value={funnelViewMode}
+                onChange={e => setFunnelViewMode(e.target.value)}
+              >
+                <option value="pipeline">Текущие сделки (Pipeline)</option>
+                <option value="conversion">Исторические переходы (Conversion)</option>
+              </select>
+            </div>
+          )}
+
+          {/* Менеджер - RPT-001, RPT-003, RPT-004 */}
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-003' || activeReportId === 'RPT-004') && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Менеджер</label>
+              <select
+                className={styles.filterInput}
+                value={selectedManager}
+                onChange={e => setSelectedManager(e.target.value)}
+              >
+                <option value="ALL">Все менеджеры</option>
+                {managers.map(mgr => (
+                  <option key={mgr} value={mgr}>
+                    {mgr}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Источник трафика - RPT-001 */}
+          {activeReportId === 'RPT-001' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Источник</label>
+              <select
+                className={styles.filterInput}
+                value={selectedSource}
+                onChange={e => setSelectedSource(e.target.value)}
+              >
+                <option value="ALL">Все источники</option>
+                {sources.map(src => (
+                  <option key={src} value={src}>
+                    {src}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Канал - RPT-001 */}
+          {activeReportId === 'RPT-001' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Канал</label>
+              <select
+                className={styles.filterInput}
+                value={selectedChannel}
+                onChange={e => setSelectedChannel(e.target.value)}
+              >
+                <option value="ALL">Все каналы</option>
+                {CHANNELS.map(ch => (
+                  <option key={ch} value={ch}>
+                    {CHANNEL_TRANSLATIONS[ch] || ch}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Схема оплаты - RPT-001, RPT-004 */}
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-004') && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Схема оплаты</label>
+              <select
+                className={styles.filterInput}
+                value={selectedPaymentType}
+                onChange={e => setSelectedPaymentType(e.target.value)}
+              >
+                <option value="ALL">Все схемы</option>
+                {paymentTypes.map(pt => (
+                  <option key={pt} value={pt}>
+                    {PAYMENT_TYPE_TRANSLATIONS[pt] || pt}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Тип клиента - RPT-001 */}
+          {activeReportId === 'RPT-001' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Тип клиента</label>
+              <select
+                className={styles.filterInput}
+                value={selectedClientType}
+                onChange={e => setSelectedClientType(e.target.value)}
+              >
+                <option value="ALL">Все типы</option>
+                <option value="VIP">⭐ VIP клиент</option>
+                <option value="REGULAR">Обычный клиент</option>
+              </select>
+            </div>
+          )}
+
+          {/* Корпус - RPT-002 */}
+          {activeReportId === 'RPT-002' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Корпус</label>
+              <select
+                className={styles.filterInput}
+                value={selectedBlock}
+                onChange={e => setSelectedBlock(e.target.value)}
+              >
+                <option value="ALL">Все корпуса</option>
+                {blocks
+                  .filter(b => selectedProject === 'ALL' || b.projectId === selectedProject)
+                  .map(b => (
+                    <option key={b.id} value={b.id}>
+                      {b.number}
+                    </option>
+                  ))}
+              </select>
+            </div>
+          )}
+
+          {/* Тип помещения - RPT-002 */}
+          {activeReportId === 'RPT-002' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Тип помещения</label>
+              <select
+                className={styles.filterInput}
+                value={selectedUnitType}
+                onChange={e => setSelectedUnitType(e.target.value)}
+              >
+                <option value="ALL">Все типы</option>
+                {unitTypes.map(ut => (
+                  <option key={ut} value={ut}>
+                    {UNIT_TYPE_TRANSLATIONS[ut] || ut}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Фильтр статуса — только RPT-008 */}
           {activeReportId === 'RPT-008' && (
@@ -650,27 +1195,6 @@ export default function ReportsClient({ organizationId, projects, initialData }:
             🔍 Сформировать
           </button>
         </section>
-
-        {/* Сводные KPI-карточки для RPT-008 и RPT-009 */}
-        {reportGenerated && summaryCards.length > 0 && (
-          <div style={{ display: 'flex', gap: '16px', marginBottom: '20px' }}>
-            {summaryCards.map((card, i) => (
-              <div key={i} style={{
-                flex: 1,
-                background: 'white',
-                borderRadius: '16px',
-                padding: '20px 24px',
-                border: '1px solid #e2e8f0',
-                boxShadow: '0 2px 8px rgba(0,0,0,0.04)',
-              }}>
-                <div style={{ fontSize: '1.5rem', marginBottom: '8px' }}>{card.icon}</div>
-                <div style={{ fontSize: '0.75rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', marginBottom: '4px' }}>{card.label}</div>
-                <div style={{ fontSize: '1.5rem', fontWeight: 800, color: '#0f172a', marginBottom: '4px' }}>{card.value}</div>
-                <div style={{ fontSize: '0.8rem', color: '#64748b' }}>{card.subtext}</div>
-              </div>
-            ))}
-          </div>
-        )}
 
         {/* Таблица результатов */}
         <section className={styles.tableCard}>
