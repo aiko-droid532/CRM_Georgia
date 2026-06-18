@@ -11,19 +11,28 @@ export async function getFunnelReportData(organizationId: string) {
         d.status::text as "stage",
         b."projectId" as "projectId",
         d."createdAt" as "createdAt",
-        COALESCE(u.price, 0)::double precision as "amount"
+        COALESCE(u.price, 0)::double precision as "amount",
+        COALESCE(d."managerId", 'Не назначен') as "managerId",
+        COALESCE(l.source, 'Не указан') as "source",
+        l."isVip" as "isVip",
+        COALESCE(d."paymentType", 'Не указана') as "paymentType"
       FROM "Deal" d
+      JOIN "Lead" l ON d."leadId" = l.id
       LEFT JOIN "Unit" u ON d."unitId" = u.id
       LEFT JOIN "Block" b ON u."blockId" = b.id
       WHERE d."organizationId" = ${organizationId}
     `;
-
+    
     return rawData.map(row => ({
       dealId: row.dealId,
       stage: row.stage,
       projectId: row.projectId,
       createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
-      amount: row.amount
+      amount: row.amount,
+      managerId: row.managerId,
+      source: row.source,
+      isVip: row.isVip,
+      paymentType: row.paymentType
     }));
   } catch (e) {
     console.error('getFunnelReportData error:', e);
@@ -31,7 +40,49 @@ export async function getFunnelReportData(organizationId: string) {
   }
 }
 
-// RPT-002: План/факт продаж по ЖК (SUCCESS сделки по проектам)
+// RPT-001: Исторические переходы (Conversion View) из AuditLog
+export async function getDealTransitions(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        a."entityId" as "dealId",
+        a."oldValue" as "fromStage",
+        a."newValue" as "toStage",
+        a."createdAt" as "createdAt",
+        b."projectId" as "projectId",
+        COALESCE(d."managerId", 'Не назначен') as "managerId",
+        COALESCE(l.source, 'Не указан') as "source",
+        l."isVip" as "isVip",
+        COALESCE(d."paymentType", 'Не указана') as "paymentType",
+        COALESCE(u.price, 0)::double precision as "amount"
+      FROM "AuditLog" a
+      JOIN "Deal" d ON a."entityId" = d.id
+      JOIN "Lead" l ON d."leadId" = l.id
+      LEFT JOIN "Unit" u ON d."unitId" = u.id
+      LEFT JOIN "Block" b ON u."blockId" = b.id
+      WHERE a."entityType" = 'Deal' 
+        AND a."fieldName" = 'status' 
+        AND a."organizationId" = ${organizationId}
+    `;
+    return rawData.map(row => ({
+      dealId: row.dealId,
+      fromStage: row.fromStage,
+      toStage: row.toStage,
+      createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
+      projectId: row.projectId,
+      managerId: row.managerId,
+      source: row.source,
+      isVip: row.isVip,
+      paymentType: row.paymentType,
+      amount: row.amount
+    }));
+  } catch (e) {
+    console.error('getDealTransitions error:', e);
+    return [];
+  }
+}
+
+// RPT-002: План/факт продаж по ЖК (SUCCESS/PAYMENT_CONFIRMED сделки по проектам)
 export async function getProjectSalesReportData(organizationId: string) {
   try {
     const rawData: any[] = await prisma.$queryRaw`
@@ -40,12 +91,14 @@ export async function getProjectSalesReportData(organizationId: string) {
         p.id as "projectId",
         p."nameRu" as "projectName",
         d."updatedAt" as "wonAt",
-        COALESCE(u.price, 0)::double precision as "price"
+        COALESCE(u.price, 0)::double precision as "price",
+        b.id as "blockId",
+        u.type as "unitType"
       FROM "Deal" d
       JOIN "Unit" u ON d."unitId" = u.id
       JOIN "Block" b ON u."blockId" = b.id
       JOIN "Project" p ON b."projectId" = p.id
-      WHERE p."organizationId" = ${organizationId} AND d.status = 'SUCCESS'
+      WHERE p."organizationId" = ${organizationId} AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
     `;
 
     return rawData.map(row => ({
@@ -54,6 +107,8 @@ export async function getProjectSalesReportData(organizationId: string) {
       projectName: row.projectName,
       wonAt: row.wonAt ? row.wonAt.toISOString().split('T')[0] : null,
       price: row.price,
+      blockId: row.blockId,
+      unitType: row.unitType,
       targetUnits: 10, // Симуляция планового показателя на проект
       targetRevenue: 1500000.00
     }));
@@ -63,7 +118,7 @@ export async function getProjectSalesReportData(organizationId: string) {
   }
 }
 
-// RPT-003: План/факт продаж по менеджерам (SUCCESS сделки по менеджерам)
+// RPT-003: План/факт продаж по менеджерам (SUCCESS/PAYMENT_CONFIRMED сделки по менеджерам)
 export async function getManagerSalesReportData(organizationId: string) {
   try {
     const rawData: any[] = await prisma.$queryRaw`
@@ -76,7 +131,7 @@ export async function getManagerSalesReportData(organizationId: string) {
       FROM "Deal" d
       JOIN "Unit" u ON d."unitId" = u.id
       JOIN "Block" b ON u."blockId" = b.id
-      WHERE d."organizationId" = ${organizationId} AND d.status = 'SUCCESS'
+      WHERE d."organizationId" = ${organizationId} AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
     `;
 
     return rawData.map(row => ({
@@ -105,6 +160,8 @@ export async function getSalesCashFlowData(organizationId: string) {
         u.price as "contractAmount",
         b."projectId" as "projectId",
         d."createdAt" as "createdAt",
+        COALESCE(d."paymentType", 'Не указана') as "paymentType",
+        COALESCE(d."managerId", 'Не назначен') as "managerId",
         COALESCE((
           SELECT SUM(t.amount) 
           FROM "Transaction" t 
@@ -290,6 +347,86 @@ export async function getProjectsList(organizationId: string) {
     }));
   } catch (e) {
     console.error('getProjectsList error:', e);
+    return [];
+  }
+}
+
+// Получить список менеджеров из сделок и лидов
+export async function getManagersList(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT DISTINCT "managerId" 
+      FROM "Deal" 
+      WHERE "organizationId" = ${organizationId} AND "managerId" IS NOT NULL AND "managerId" != ''
+      UNION
+      SELECT DISTINCT "managerId" 
+      FROM "Lead" 
+      WHERE "organizationId" = ${organizationId} AND "managerId" IS NOT NULL AND "managerId" != ''
+    `;
+    return rawData.map(row => row.managerId).filter(Boolean);
+  } catch (e) {
+    console.error('getManagersList error:', e);
+    return [];
+  }
+}
+
+// Получить список корпусов (Block) для ЖК
+export async function getBlocksList(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT id, number, "projectId"
+      FROM "Block"
+      WHERE "organizationId" = ${organizationId}
+      ORDER BY number ASC
+    `;
+    return rawData;
+  } catch (e) {
+    console.error('getBlocksList error:', e);
+    return [];
+  }
+}
+
+// Получить список источников из лидов
+export async function getSourcesList(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT DISTINCT source 
+      FROM "Lead" 
+      WHERE "organizationId" = ${organizationId} AND source IS NOT NULL AND source != ''
+    `;
+    return rawData.map(row => row.source).filter(Boolean);
+  } catch (e) {
+    console.error('getSourcesList error:', e);
+    return [];
+  }
+}
+
+// Получить список типов оплат (схем оплат) из сделок
+export async function getPaymentTypesList(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT DISTINCT "paymentType" 
+      FROM "Deal" 
+      WHERE "organizationId" = ${organizationId} AND "paymentType" IS NOT NULL AND "paymentType" != ''
+    `;
+    return rawData.map(row => row.paymentType).filter(Boolean);
+  } catch (e) {
+    console.error('getPaymentTypesList error:', e);
+    return [];
+  }
+}
+
+// Получить список типов помещений
+export async function getUnitTypesList(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT DISTINCT type 
+      FROM "Unit" 
+      WHERE "organizationId" = ${organizationId} AND type IS NOT NULL AND type != ''
+    `;
+    return rawData.map(row => row.type).filter(Boolean);
+  } catch (e) {
+    console.error('getUnitTypesList error:', e);
     return [];
   }
 }
