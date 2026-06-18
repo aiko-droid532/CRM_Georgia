@@ -232,8 +232,8 @@ export default function ReportsClient({
         ];
       case 'RPT-012':
         return [
-          { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Банк': 'TBC Bank', 'Сумма ипотеки ($)': 450000, 'Статус одобрения': 'Одобрено банком' },
-          { 'Сделка': 'DEAL-9051', 'Клиент': 'Смирнов Д.', 'Банк': 'Bank of Georgia', 'Сумма ипотеки ($)': 310000, 'Статус одобрения': 'На рассмотрении' }
+          { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Банк': 'ТБС Банк', 'Сумма ипотеки ($)': 450000, 'Статус одобрения': 'Одобрено банком' },
+          { 'Сделка': 'DEAL-9051', 'Клиент': 'Смирнов Д.', 'Банк': 'Банк Грузии', 'Сумма ипотеки ($)': 310000, 'Статус одобрения': 'На рассмотрении' }
         ];
       case 'RPT-013':
         return [
@@ -242,13 +242,13 @@ export default function ReportsClient({
         ];
       case 'RPT-014':
         return [
-          { 'Сделка': 'DEAL-8991', 'Клиент': 'Оганесян Г.', 'Банк-депозитарий': 'TBC', 'Сумма на эскроу ($)': 145000, 'Этап раскрытия': 'Каркас здания завершен (30% раскрыто)' }
+          { 'Сделка': 'DEAL-8991', 'Клиент': 'Оганесян Г.', 'Банк-депозитарий': 'ТБС Банк', 'Сумма на эскроу ($)': 145000, 'Этап раскрытия': 'Каркас здания завершен (30% раскрыто)' }
         ];
       case 'RPT-015':
         return [
-          { 'Квартира': '№102', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 3, 'Статус': 'FREE (Свободно)', 'Цена ($)': 97000 },
-          { 'Квартира': '№105', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 62.0, 'Этаж': 3, 'Статус': 'FREE (Свободно)', 'Цена ($)': 124000 },
-          { 'Квартира': '№202', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 4, 'Статус': 'FREE (Свободно)', 'Цена ($)': 99000 }
+          { 'Квартира': '№102', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 3, 'Статус': 'Свободно', 'Цена ($)': 97000 },
+          { 'Квартира': '№105', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 62.0, 'Этаж': 3, 'Статус': 'Свободно', 'Цена ($)': 124000 },
+          { 'Квартира': '№202', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Пло销 (м²)': 48.5, 'Этаж': 4, 'Статус': 'Свободно', 'Цена ($)': 99000 }
         ];
       case 'RPT-016':
         return [
@@ -262,8 +262,8 @@ export default function ReportsClient({
         ];
       case 'RPT-018':
         return [
-          { 'ЖК': 'Skyline Residence', 'Тип': 'Apartment', 'Площадь (м²)': 52.4, 'Цена ($)': 104800, 'Этаж': 4, 'Вид из окна': 'Море' },
-          { 'ЖК': 'Skyline Residence', 'Тип': 'Apartment', 'Площадь (м²)': 62.0, 'Цена ($)': 124000, 'Этаж': 3, 'Вид из окна': 'Парк' }
+          { 'ЖК': 'Skyline Residence', 'Тип': 'Квартира', 'Площадь (м²)': 52.4, 'Цена ($)': 104800, 'Этаж': 4, 'Вид из окна': 'Море' },
+          { 'ЖК': 'Skyline Residence', 'Тип': 'Квартира', 'Площадь (м²)': 62.0, 'Цена ($)': 124000, 'Этаж': 3, 'Вид из окна': 'Парк' }
         ];
       case 'RPT-019':
         return [
@@ -284,8 +284,8 @@ export default function ReportsClient({
         ];
       case 'RPT-025':
         return [
-          { 'Квартира': '№303', 'Клиент': 'Кайсар Бейсекбаев', 'Дата брони': today, 'Тип': 'Soft Booking', 'Статус': 'Снята (Сделка оформлена)' },
-          { 'Квартира': '№110', 'Клиент': 'Смирнова О.', 'Дата брони': today, 'Тип': 'Soft Booking', 'Статус': 'Активна (Осталось 14 часов)' }
+          { 'Квартира': '№303', 'Клиент': 'Кайсар Бейсекбаев', 'Дата брони': today, 'Тип': 'Временная бронь', 'Статус': 'Снята (Сделка оформлена)' },
+          { 'Квартира': '№110', 'Клиент': 'Смирнова О.', 'Дата брони': today, 'Тип': 'Временная бронь', 'Статус': 'Активна (Осталось 14 часов)' }
         ];
       default:
         return [];
@@ -555,7 +555,7 @@ export default function ReportsClient({
           'Сумма договора ($)': Math.round(row.contractAmount),
           'Поступило оплат ($)': Math.round(row.paidAmount),
           'Ожидается платежей ($)': Math.round(row.pendingAmount),
-          'Схема оплаты': row.paymentType,
+          'Схема оплаты': PAYMENT_TYPE_TRANSLATIONS[row.paymentType] || row.paymentType || 'Не указана',
           'Менеджер': row.managerId,
           'Дата заключения': row.createdAt
         }));
@@ -671,6 +671,109 @@ export default function ReportsClient({
     }
   }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects]);
 
+  // Расчет динамических KPI показателей отчетов
+  const reportStats = useMemo(() => {
+    if (activeReportId === 'RPT-001') {
+      let totalDeals = 0;
+      let totalAmountUsd = 0;
+      let totalAmountGel = 0;
+      let successDeals = 0;
+
+      const countKey = funnelViewMode === 'pipeline' ? 'Количество сделок' : 'Уникальных переходов';
+      const usdKey = funnelViewMode === 'pipeline' ? 'Сумма (USD)' : 'Оборот этапа (USD)';
+      const gelKey = funnelViewMode === 'pipeline' ? 'Сумма (GEL)' : 'Оборот этапа (GEL)';
+
+      activeReportData.forEach(row => {
+        const count = Number(row[countKey]) || 0;
+        const usd = Number(row[usdKey]) || 0;
+        const gel = Number(row[gelKey]) || 0;
+        totalDeals += count;
+        totalAmountUsd += usd;
+        totalAmountGel += gel;
+        if (row['Этап воронки'] === STAGE_TRANSLATIONS['SUCCESS'] || row['Этап воронки'] === STAGE_TRANSLATIONS['PAYMENT_CONFIRMED']) {
+          successDeals += count;
+        }
+      });
+
+      const conversion = totalDeals > 0 ? ((successDeals / totalDeals) * 100).toFixed(1) + '%' : '0.0%';
+
+      return [
+        { label: 'Всего сделок', value: totalDeals.toString(), subtext: 'В выбранном периоде', icon: '💼' },
+        { label: 'Общий бюджет', value: `$${totalAmountUsd.toLocaleString()}`, subtext: `₾${totalAmountGel.toLocaleString()}`, icon: '💰' },
+        { label: 'Успешные сделки', value: successDeals.toString(), subtext: `Конверсия: ${conversion}`, icon: '🏆' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-002') {
+      let totalSold = 0;
+      let totalTargetUnits = 0;
+      let totalRevenueFact = 0;
+      let totalRevenuePlan = 0;
+
+      activeReportData.forEach(row => {
+        totalSold += Number(row['Продано (Юнитов)']) || 0;
+        totalTargetUnits += Number(row['План (Юнитов)']) || 0;
+        totalRevenueFact += Number(row['Выручка Факт ($)']) || 0;
+        totalRevenuePlan += Number(row['Выручка План ($)']) || 0;
+      });
+
+      const unitCompletion = totalTargetUnits > 0 ? ((totalSold / totalTargetUnits) * 100).toFixed(1) + '%' : '0.0%';
+      const revCompletion = totalRevenuePlan > 0 ? ((totalRevenueFact / totalRevenuePlan) * 100).toFixed(1) + '%' : '0.0%';
+
+      return [
+        { label: 'Продано юнитов', value: totalSold.toString(), subtext: `План: ${totalTargetUnits} (${unitCompletion})`, icon: '🏢' },
+        { label: 'Выручка Факт', value: `$${totalRevenueFact.toLocaleString()}`, subtext: `План: $${totalRevenuePlan.toLocaleString()}`, icon: '💵' },
+        { label: 'Выполнение плана', value: revCompletion, subtext: 'По сумме выручки', icon: '📈' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-003') {
+      let totalSold = 0;
+      let totalRevenue = 0;
+      let topManager = '—';
+      let maxRevenue = -1;
+
+      activeReportData.forEach(row => {
+        totalSold += Number(row['Продано (Юнитов)']) || 0;
+        const rev = Number(row['Выручка Факт ($)']) || 0;
+        totalRevenue += rev;
+        if (rev > maxRevenue) {
+          maxRevenue = rev;
+          topManager = row['Менеджер'] || '—';
+        }
+      });
+
+      return [
+        { label: 'Всего продано', value: `${totalSold} шт.`, subtext: 'Всеми менеджерами', icon: '👤' },
+        { label: 'Общая выручка', value: `$${totalRevenue.toLocaleString()}`, subtext: `В среднем: $${Math.round(activeReportData.length > 0 ? totalRevenue / activeReportData.length : 0).toLocaleString()}`, icon: '💰' },
+        { label: 'Лидер продаж', value: topManager, subtext: maxRevenue > 0 ? `Результат: $${maxRevenue.toLocaleString()}` : 'Нет сделок', icon: '👑' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-004') {
+      let totalContract = 0;
+      let totalPaid = 0;
+      let totalPending = 0;
+
+      activeReportData.forEach(row => {
+        totalContract += Number(row['Сумма договора ($)']) || 0;
+        totalPaid += Number(row['Поступило оплат ($)']) || 0;
+        totalPending += Number(row['Ожидается платежей ($)']) || 0;
+      });
+
+      return [
+        { label: 'Сумма договоров', value: `$${totalContract.toLocaleString()}`, subtext: `Всего сделок: ${activeReportData.length}`, icon: '📝' },
+        { label: 'Поступило оплат', value: `$${totalPaid.toLocaleString()}`, subtext: `Оплачено: ${totalContract > 0 ? ((totalPaid / totalContract) * 100).toFixed(1) + '%' : '0%'}`, icon: '📥' },
+        { label: 'Ожидается платежей', value: `$${totalPending.toLocaleString()}`, subtext: `Остаток: ${totalContract > 0 ? ((totalPending / totalContract) * 100).toFixed(1) + '%' : '0%'}`, icon: '⏳' }
+      ];
+    }
+
+    // Дефолтные показатели для некритических отчетов
+    return [
+      { label: 'Всего записей', value: activeReportData.length.toString(), subtext: 'В текущей таблице', icon: '📊' }
+    ];
+  }, [activeReportId, activeReportData, funnelViewMode]);
+
   // Заголовки колонок таблицы на основе полученных данных
   const tableHeaders = useMemo(() => {
     if (activeReportData.length === 0) return [];
@@ -751,6 +854,20 @@ export default function ReportsClient({
             📥 Скачать в Excel
           </button>
         </header>
+
+        {/* Карточки показателей (KPI Stat Cards) */}
+        <div className={styles.statsGrid}>
+          {reportStats.map((stat, idx) => (
+            <div key={idx} className={styles.statCard}>
+              <div className={styles.statHeader}>
+                <span className={styles.statLabel}>{stat.label}</span>
+                <span className={styles.statIcon}>{stat.icon}</span>
+              </div>
+              <div className={styles.statValue}>{stat.value}</div>
+              <div className={styles.statSub}>{stat.subtext}</div>
+            </div>
+          ))}
+        </div>
 
         {/* Панель фильтров */}
         <section className={styles.filterBar} style={{ flexWrap: 'wrap', gap: '15px' }}>
@@ -859,7 +976,7 @@ export default function ReportsClient({
                 <option value="ALL">Все каналы</option>
                 {CHANNELS.map(ch => (
                   <option key={ch} value={ch}>
-                    {ch}
+                    {CHANNEL_TRANSLATIONS[ch] || ch}
                   </option>
                 ))}
               </select>
@@ -878,7 +995,7 @@ export default function ReportsClient({
                 <option value="ALL">Все схемы</option>
                 {paymentTypes.map(pt => (
                   <option key={pt} value={pt}>
-                    {pt}
+                    {PAYMENT_TYPE_TRANSLATIONS[pt] || pt}
                   </option>
                 ))}
               </select>
@@ -934,7 +1051,7 @@ export default function ReportsClient({
                 <option value="ALL">Все типы</option>
                 {unitTypes.map(ut => (
                   <option key={ut} value={ut}>
-                    {ut}
+                    {UNIT_TYPE_TRANSLATIONS[ut] || ut}
                   </option>
                 ))}
               </select>
