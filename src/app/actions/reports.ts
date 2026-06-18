@@ -2,6 +2,11 @@
 
 import { db as prisma } from '@/lib/db';
 
+// Цены хранятся напрямую в USD, конвертация не требуется
+function convertPrice(price: number, projectName?: string): number {
+  return price;
+}
+
 // RPT-001: Воронка продаж (количество сделок, суммы и конверсия по этапам)
 export async function getFunnelReportData(organizationId: string) {
   try {
@@ -10,6 +15,7 @@ export async function getFunnelReportData(organizationId: string) {
         d.id as "dealId",
         d.status::text as "stage",
         b."projectId" as "projectId",
+        p."nameRu" as "projectName",
         d."createdAt" as "createdAt",
         COALESCE(u.price, 0)::double precision as "amount",
         COALESCE(d."managerId", 'Не назначен') as "managerId",
@@ -20,15 +26,16 @@ export async function getFunnelReportData(organizationId: string) {
       JOIN "Lead" l ON d."leadId" = l.id
       LEFT JOIN "Unit" u ON d."unitId" = u.id
       LEFT JOIN "Block" b ON u."blockId" = b.id
+      LEFT JOIN "Project" p ON b."projectId" = p.id
       WHERE d."organizationId" = ${organizationId}
     `;
-
+    
     return rawData.map(row => ({
       dealId: row.dealId,
       stage: row.stage,
       projectId: row.projectId,
       createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
-      amount: row.amount,
+      amount: convertPrice(row.amount, row.projectName),
       managerId: row.managerId,
       source: row.source,
       isVip: row.isVip,
@@ -50,6 +57,7 @@ export async function getDealTransitions(organizationId: string) {
         a."newValue" as "toStage",
         a."createdAt" as "createdAt",
         b."projectId" as "projectId",
+        p."nameRu" as "projectName",
         COALESCE(d."managerId", 'Не назначен') as "managerId",
         COALESCE(l.source, 'Не указан') as "source",
         l."isVip" as "isVip",
@@ -60,6 +68,7 @@ export async function getDealTransitions(organizationId: string) {
       JOIN "Lead" l ON d."leadId" = l.id
       LEFT JOIN "Unit" u ON d."unitId" = u.id
       LEFT JOIN "Block" b ON u."blockId" = b.id
+      LEFT JOIN "Project" p ON b."projectId" = p.id
       WHERE a."entityType" = 'Deal' 
         AND a."fieldName" = 'status' 
         AND a."organizationId" = ${organizationId}
@@ -74,7 +83,7 @@ export async function getDealTransitions(organizationId: string) {
       source: row.source,
       isVip: row.isVip,
       paymentType: row.paymentType,
-      amount: row.amount
+      amount: convertPrice(row.amount, row.projectName)
     }));
   } catch (e) {
     console.error('getDealTransitions error:', e);
@@ -82,7 +91,7 @@ export async function getDealTransitions(organizationId: string) {
   }
 }
 
-// RPT-002: План/факт продаж по ЖК (SUCCESS/PAYMENT_CONFIRMED сделки по проектам)
+// RPT-002: План/факт продаж по ЖК (SUCCESS/PAYMENT_CONFIRMED сделки по проектам + юниты со статусом SOLD/DOWN_PAYMENT_RECEIVED)
 export async function getProjectSalesReportData(organizationId: string) {
   try {
     const rawData: any[] = await prisma.$queryRaw`
@@ -90,59 +99,75 @@ export async function getProjectSalesReportData(organizationId: string) {
         d.id as "dealId",
         p.id as "projectId",
         p."nameRu" as "projectName",
-        d."updatedAt" as "wonAt",
+        COALESCE(d."updatedAt", u."updatedAt") as "wonAt",
         COALESCE(u.price, 0)::double precision as "price",
         b.id as "blockId",
         u.type as "unitType"
-      FROM "Deal" d
-      JOIN "Unit" u ON d."unitId" = u.id
+      FROM "Unit" u
       JOIN "Block" b ON u."blockId" = b.id
       JOIN "Project" p ON b."projectId" = p.id
-      WHERE p."organizationId" = ${organizationId} AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
+      LEFT JOIN "Deal" d ON d."unitId" = u.id AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
+      WHERE p."organizationId" = ${organizationId}
+        AND (u.status IN ('SOLD', 'DOWN_PAYMENT_RECEIVED') OR d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED'))
     `;
 
-    return rawData.map(row => ({
-      dealId: row.dealId,
-      projectId: row.projectId,
-      projectName: row.projectName,
-      wonAt: row.wonAt ? row.wonAt.toISOString().split('T')[0] : null,
-      price: row.price,
-      blockId: row.blockId,
-      unitType: row.unitType,
-      targetUnits: 10, // Симуляция планового показателя на проект
-      targetRevenue: 1500000.00
-    }));
+    return rawData.map(row => {
+      const price = convertPrice(row.price, row.projectName);
+      const targetUnits = 10;
+      const targetRevenue = 1500000.00; // План в USD
+
+      return {
+        dealId: row.dealId,
+        projectId: row.projectId,
+        projectName: row.projectName,
+        wonAt: row.wonAt ? row.wonAt.toISOString().split('T')[0] : null,
+        price,
+        blockId: row.blockId,
+        unitType: row.unitType,
+        targetUnits,
+        targetRevenue
+      };
+    });
   } catch (e) {
     console.error('getProjectSalesReportData error:', e);
     return [];
   }
 }
 
-// RPT-003: План/факт продаж по менеджерам (SUCCESS/PAYMENT_CONFIRMED сделки по менеджерам)
+// RPT-003: План/факт продаж по менеджерам (SUCCESS/PAYMENT_CONFIRMED сделки + юниты SOLD/DOWN_PAYMENT_RECEIVED)
 export async function getManagerSalesReportData(organizationId: string) {
   try {
     const rawData: any[] = await prisma.$queryRaw`
       SELECT 
         d.id as "dealId",
         COALESCE(d."managerId", 'Не назначен') as "managerId",
-        b."projectId" as "projectId",
-        d."updatedAt" as "wonAt",
+        p.id as "projectId",
+        p."nameRu" as "projectName",
+        COALESCE(d."updatedAt", u."updatedAt") as "wonAt",
         COALESCE(u.price, 0)::double precision as "price"
-      FROM "Deal" d
-      JOIN "Unit" u ON d."unitId" = u.id
+      FROM "Unit" u
       JOIN "Block" b ON u."blockId" = b.id
-      WHERE d."organizationId" = ${organizationId} AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
+      JOIN "Project" p ON b."projectId" = p.id
+      LEFT JOIN "Deal" d ON d."unitId" = u.id AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
+      WHERE p."organizationId" = ${organizationId}
+        AND (u.status IN ('SOLD', 'DOWN_PAYMENT_RECEIVED') OR d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED'))
     `;
 
-    return rawData.map(row => ({
-      dealId: row.dealId,
-      managerId: row.managerId,
-      projectId: row.projectId,
-      wonAt: row.wonAt ? row.wonAt.toISOString().split('T')[0] : null,
-      price: row.price,
-      targetUnits: 5, // Симуляция индивидуальных планов
-      targetRevenue: 750000.00
-    }));
+    return rawData.map(row => {
+      const price = convertPrice(row.price, row.projectName);
+      const targetUnits = 5;
+      const targetRevenue = 750000.00; // План в USD
+
+      return {
+        dealId: row.dealId,
+        managerId: row.managerId,
+        projectId: row.projectId,
+        wonAt: row.wonAt ? row.wonAt.toISOString().split('T')[0] : null,
+        price,
+        targetUnits,
+        targetRevenue
+      };
+    });
   } catch (e) {
     console.error('getManagerSalesReportData error:', e);
     return [];
@@ -159,6 +184,7 @@ export async function getSalesCashFlowData(organizationId: string) {
         u.number as "unitNumber",
         u.price as "contractAmount",
         b."projectId" as "projectId",
+        p."nameRu" as "projectName",
         d."createdAt" as "createdAt",
         COALESCE(d."paymentType", 'Не указана') as "paymentType",
         COALESCE(d."managerId", 'Не назначен') as "managerId",
@@ -177,13 +203,22 @@ export async function getSalesCashFlowData(organizationId: string) {
       JOIN "Lead" l ON d."leadId" = l.id
       JOIN "Unit" u ON d."unitId" = u.id
       JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
       WHERE d."organizationId" = ${organizationId} 
         AND d.status NOT IN ('FAILED', 'CANCELLED')
     `;
 
     return rawData.map(row => ({
-      ...row,
-      createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null
+      dealId: row.dealId,
+      clientName: row.clientName,
+      unitNumber: row.unitNumber,
+      contractAmount: convertPrice(row.contractAmount, row.projectName),
+      projectId: row.projectId,
+      createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
+      paymentType: row.paymentType,
+      managerId: row.managerId,
+      paidAmount: convertPrice(row.paidAmount, row.projectName),
+      pendingAmount: convertPrice(row.pendingAmount, row.projectName)
     }));
   } catch (e) {
     console.error('getSalesCashFlowData error:', e);
@@ -204,6 +239,7 @@ export async function getPaymentRegistryData(organizationId: string) {
         ps."dueDate" as "dueDate",
         ps.status::text as "paymentStatus",
         b."projectId" as "projectId",
+        p."nameRu" as "projectName",
         COALESCE((
           SELECT SUM(t.amount) 
           FROM "Transaction" t 
@@ -214,13 +250,21 @@ export async function getPaymentRegistryData(organizationId: string) {
       JOIN "Lead" l ON d."leadId" = l.id
       JOIN "Unit" u ON d."unitId" = u.id
       JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
       WHERE ps."organizationId" = ${organizationId}
       ORDER BY ps."dueDate" ASC
     `;
 
     return rawData.map(row => ({
-      ...row,
-      dueDate: row.dueDate.toISOString().split('T')[0]
+      scheduleId: row.scheduleId,
+      dealId: row.dealId,
+      clientName: row.clientName,
+      unitNumber: row.unitNumber,
+      scheduledAmount: convertPrice(row.scheduledAmount, row.projectName),
+      dueDate: row.dueDate.toISOString().split('T')[0],
+      paymentStatus: row.paymentStatus,
+      projectId: row.projectId,
+      paidAmount: convertPrice(row.paidAmount, row.projectName)
     }));
   } catch (e) {
     console.error('getPaymentRegistryData error:', e);
@@ -241,6 +285,7 @@ export async function getDebtorsRegistryData(organizationId: string) {
         ps.amount as "overdueAmount",
         ps."dueDate" as "dueDate",
         b."projectId" as "projectId",
+        p."nameRu" as "projectName",
         COALESCE(d."managerId", 'Не назначен') as "managerId",
         COALESCE(d."penaltyRate", 0.001) as "penaltyRate"
       FROM "PaymentSchedule" ps
@@ -248,21 +293,30 @@ export async function getDebtorsRegistryData(organizationId: string) {
       JOIN "Lead" l ON d."leadId" = l.id
       JOIN "Unit" u ON d."unitId" = u.id
       JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
       WHERE ps."organizationId" = ${organizationId} 
         AND (ps.status = 'OVERDUE' OR (ps.status = 'PENDING' AND ps."dueDate" < NOW()))
       ORDER BY ps."dueDate" ASC
     `;
 
     return rawData.map(row => {
+      const overdueAmount = convertPrice(row.overdueAmount, row.projectName);
       const daysOverdue = Math.max(0, Math.floor((Date.now() - new Date(row.dueDate).getTime()) / (1000 * 60 * 60 * 24)));
       const rate = row.penaltyRate ?? 0.001;
-      const penalty = parseFloat((row.overdueAmount * rate * daysOverdue).toFixed(2)); // Пеня по ставке из договора
+      const penalty = parseFloat((overdueAmount * rate * daysOverdue).toFixed(2)); // Пеня по ставке из договора
       return {
-        ...row,
+        scheduleId: row.scheduleId,
+        dealId: row.dealId,
+        clientName: row.clientName,
+        clientPhone: row.clientPhone,
+        unitNumber: row.unitNumber,
+        overdueAmount,
         dueDate: row.dueDate.toISOString().split('T')[0],
+        projectId: row.projectId,
+        managerId: row.managerId,
         daysOverdue,
         penalty,
-        totalDebt: row.overdueAmount + penalty
+        totalDebt: overdueAmount + penalty
       };
     });
   } catch (e) {
@@ -308,6 +362,7 @@ export async function getMarketingChannelsData(organizationId: string) {
         d.id as "dealId",
         COALESCE(l.source, 'Не указан') as "source",
         b."projectId" as "projectId",
+        p."nameRu" as "projectName",
         d."createdAt" as "createdAt",
         d.status::text as "status",
         COALESCE(u.price, 0)::double precision as "price"
@@ -315,6 +370,7 @@ export async function getMarketingChannelsData(organizationId: string) {
       JOIN "Lead" l ON d."leadId" = l.id
       LEFT JOIN "Unit" u ON d."unitId" = u.id
       LEFT JOIN "Block" b ON u."blockId" = b.id
+      LEFT JOIN "Project" p ON b."projectId" = p.id
       WHERE d."organizationId" = ${organizationId}
     `;
 
@@ -324,7 +380,7 @@ export async function getMarketingChannelsData(organizationId: string) {
       projectId: row.projectId,
       createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
       status: row.status,
-      price: row.price
+      price: convertPrice(row.price, row.projectName)
     }));
   } catch (e) {
     console.error('getMarketingChannelsData error:', e);
