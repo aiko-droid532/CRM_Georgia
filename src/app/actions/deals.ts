@@ -135,6 +135,29 @@ export async function updateDealStatus(dealId: string, status: any, previousStat
       `;
     }
 
+    // 2.2 Логируем переход статуса в AuditLog для RPT-001 (История переходов)
+    const dealDetailRows: any[] = await prisma.$queryRaw`
+      SELECT "managerId", "organizationId" FROM "Deal" WHERE "id" = ${dealId} LIMIT 1
+    `;
+    const mgrId = dealDetailRows[0]?.managerId || 'system';
+    const orgId = dealDetailRows[0]?.organizationId || 'default';
+
+    await prisma.$executeRaw`
+      INSERT INTO "AuditLog" ("id", "action", "entityType", "entityId", "managerId", "fieldName", "oldValue", "newValue", "organizationId", "createdAt")
+      VALUES (
+        ${crypto.randomUUID()},
+        'UPDATE',
+        'Deal',
+        ${dealId},
+        ${mgrId},
+        'status',
+        ${previousStatus || 'NEW_LEAD'},
+        ${status},
+        ${orgId},
+        NOW()
+      )
+    `;
+
     // 2.5 Синхронизация статуса лида со статусом сделки (раздел 3 ТЗ)
     if (status === 'FAILED' || status === 'CANCELLED') {
       await prisma.$executeRaw`
