@@ -747,8 +747,11 @@ export default function ReportsClient({
 
       const conversion = totalDeals > 0 ? ((successDeals / totalDeals) * 100).toFixed(1) + '%' : '0.0%';
 
+      const totalLabel = funnelViewMode === 'pipeline' ? 'Всего сделок' : 'Всего переходов';
+      const totalSubtext = funnelViewMode === 'pipeline' ? 'В выбранном периоде' : 'Сумма переходов по этапам';
+
       return [
-        { label: 'Всего сделок', value: totalDeals.toString(), subtext: 'В выбранном периоде', icon: '💼' },
+        { label: totalLabel, value: totalDeals.toString(), subtext: totalSubtext, icon: '💼' },
         { label: 'Общий бюджет', value: `$${totalAmountUsd.toLocaleString()}`, subtext: `₾${totalAmountGel.toLocaleString()}`, icon: '💰' },
         { label: 'Успешные сделки', value: successDeals.toString(), subtext: `Конверсия: ${conversion}`, icon: '🏆' }
       ];
@@ -936,6 +939,26 @@ export default function ReportsClient({
           )}
         </header>
 
+        {/* Переключатель режима воронки продаж (RPT-001) */}
+        {activeReportId === 'RPT-001' && (
+          <div className={styles.funnelModeContainer}>
+            <button
+              type="button"
+              className={`${styles.modeTab} ${funnelViewMode === 'pipeline' ? styles.activeModeTab : ''}`}
+              onClick={() => setFunnelViewMode('pipeline')}
+            >
+              📊 Текущие сделки (Pipeline)
+            </button>
+            <button
+              type="button"
+              className={`${styles.modeTab} ${funnelViewMode === 'conversion' ? styles.activeModeTab : ''}`}
+              onClick={() => setFunnelViewMode('conversion')}
+            >
+              🔄 Исторические переходы (Conversion)
+            </button>
+          </div>
+        )}
+
         {/* Карточки показателей (KPI Stat Cards) */}
         {reportGenerated && (
           <div className={styles.statsGrid}>
@@ -994,20 +1017,7 @@ export default function ReportsClient({
             </select>
           </div>
 
-          {/* RPT-001 Режим воронки (Pipeline vs Conversion) */}
-          {activeReportId === 'RPT-001' && (
-            <div className={styles.filterGroup}>
-              <label className={styles.filterLabel}>Режим воронки</label>
-              <select
-                className={styles.filterInput}
-                value={funnelViewMode}
-                onChange={e => setFunnelViewMode(e.target.value)}
-              >
-                <option value="pipeline">Текущие сделки (Pipeline)</option>
-                <option value="conversion">Исторические переходы (Conversion)</option>
-              </select>
-            </div>
-          )}
+
 
           {/* Менеджер - RPT-001, RPT-003, RPT-004 */}
           {(activeReportId === 'RPT-001' || activeReportId === 'RPT-003' || activeReportId === 'RPT-004') && (
