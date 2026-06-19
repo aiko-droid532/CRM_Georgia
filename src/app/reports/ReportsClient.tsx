@@ -43,11 +43,11 @@ const REPORT_CATALOG = [
 ];
 
 const CATEGORIES = [
-  { id: 'sales', name: '📈 Воронка и продажи' },
-  { id: 'finance', name: '💸 Финансы и оплаты' },
-  { id: 'units', name: '🏢 Квартиры и остатки' },
-  { id: 'clients', name: '👥 Клиенты' },
-  { id: 'efficiency', name: '🎯 Эффективность' }
+  { id: 'sales', name: 'Воронка и продажи' },
+  { id: 'finance', name: 'Финансы и оплаты' },
+  { id: 'units', name: 'Квартиры и остатки' },
+  { id: 'clients', name: 'Клиенты' },
+  { id: 'efficiency', name: 'Эффективность' }
 ];
 
 interface ReportsClientProps {
@@ -963,7 +963,7 @@ export default function ReportsClient({
     <div className={styles.container}>
       {/* Левый рубрикатор отчетов */}
       <aside className={styles.sidebar}>
-        <div className={styles.sidebarTitle}>📊 Каталог отчетов</div>
+        <div className={styles.sidebarTitle}>Каталог отчетов</div>
 
         {CATEGORIES.map(cat => (
           <div key={cat.id} className={styles.categoryBlock}>
@@ -979,7 +979,6 @@ export default function ReportsClient({
                     <span>{report.name}</span>
                     {report.isCritical && <span className={styles.criticalBadge}>Критич.</span>}
                   </div>
-                  <span className={styles.reportId}>{report.id}</span>
                 </li>
               ))}
             </ul>
@@ -992,14 +991,14 @@ export default function ReportsClient({
         <header className={styles.reportHeader}>
           <div>
             <h1 className={styles.reportTitle}>
-              {activeReport.id}: {activeReport.name}
+              {activeReport.name}
               {!activeReport.isCritical && <span className={styles.draftBadge}>Интерактивный макет</span>}
             </h1>
             <p className={styles.reportDescription}>{activeReport.description}</p>
           </div>
           {reportGenerated && activeReportData.length > 0 && (
             <button className={styles.excelBtn} onClick={handleDownloadExcel}>
-              📥 Скачать в Excel
+              Скачать в Excel
             </button>
           )}
         </header>
@@ -1012,14 +1011,14 @@ export default function ReportsClient({
               className={`${styles.modeTab} ${funnelViewMode === 'pipeline' ? styles.activeModeTab : ''}`}
               onClick={() => setFunnelViewMode('pipeline')}
             >
-              📊 Текущие сделки (Pipeline)
+              Текущие сделки (Pipeline)
             </button>
             <button
               type="button"
               className={`${styles.modeTab} ${funnelViewMode === 'conversion' ? styles.activeModeTab : ''}`}
               onClick={() => setFunnelViewMode('conversion')}
             >
-              🔄 Исторические переходы (Conversion)
+              Исторические переходы (Conversion)
             </button>
           </div>
         )}
@@ -1031,7 +1030,6 @@ export default function ReportsClient({
               <div key={idx} className={styles.statCard}>
                 <div className={styles.statHeader}>
                   <span className={styles.statLabel}>{stat.label}</span>
-                  <span className={styles.statIcon}>{stat.icon}</span>
                 </div>
                 <div className={styles.statValue}>{stat.value}</div>
                 <div className={styles.statSub}>{stat.subtext}</div>
@@ -1170,7 +1168,7 @@ export default function ReportsClient({
                 onChange={e => setSelectedClientType(e.target.value)}
               >
                 <option value="ALL">Все типы</option>
-                <option value="VIP">⭐ VIP клиент</option>
+                <option value="VIP">VIP клиент</option>
                 <option value="REGULAR">Обычный клиент</option>
               </select>
             </div>
@@ -1226,9 +1224,9 @@ export default function ReportsClient({
                 onChange={e => setSelectedPaymentStatus(e.target.value)}
               >
                 <option value="ALL">Все статусы</option>
-                <option value="PAID">✅ Оплачено</option>
-                <option value="OVERDUE">🔴 Просрочено</option>
-                <option value="PENDING">⏳ Ожидается</option>
+                <option value="PAID">Оплачено</option>
+                <option value="OVERDUE">Просрочено</option>
+                <option value="PENDING">Ожидается</option>
               </select>
             </div>
           )}
@@ -1267,7 +1265,7 @@ export default function ReportsClient({
           )}
 
           <button className={styles.searchBtn} onClick={() => setReportGenerated(true)}>
-            🔍 Сформировать
+            Сформировать
           </button>
         </section>
 
