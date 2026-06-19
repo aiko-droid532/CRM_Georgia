@@ -9,8 +9,6 @@ import {
   getPaymentRegistryData,
   getDebtorsRegistryData,
   getCashFlowReportData,
-  getDiscountReportData,
-  getMortgageReportData,
   getManagerKpiData,
   getMarketingChannelsData,
   getProjectsList,
@@ -18,8 +16,14 @@ import {
   getBlocksList,
   getSourcesList,
   getPaymentTypesList,
-  getUnitTypesList
+  getUnitTypesList,
+  getContractDraftsReportData,
+  getSalesDynamicsReportData,
+  getCohortAnalysisReportData,
+  getDiscountReportData,
+  getMortgageReportData
 } from '@/app/actions/reports';
+import { getExchangeRate } from '@/app/actions/exchange';
 import ReportsClient from './ReportsClient';
 
 export default async function ReportsPage({
@@ -52,10 +56,13 @@ export default async function ReportsPage({
   const paymentRegistry = await getPaymentRegistryData(organizationId);
   const debtors = await getDebtorsRegistryData(organizationId);
   const cashFlowReport = await getCashFlowReportData(organizationId);
-  const discountReport = await getDiscountReportData(organizationId);
-  const mortgageReport = await getMortgageReportData(organizationId);
   const managerKpi = await getManagerKpiData(organizationId);
   const marketingChannels = await getMarketingChannelsData(organizationId);
+  const contractDrafts = await getContractDraftsReportData(organizationId);
+  const salesDynamics = await getSalesDynamicsReportData(organizationId);
+  const cohortAnalysis = await getCohortAnalysisReportData(organizationId);
+  const discountReport = await getDiscountReportData(organizationId);
+  const mortgageReport = await getMortgageReportData(organizationId);
 
   // Загружаем динамические справочники для фильтров
   const projects = await getProjectsList(organizationId);
@@ -64,6 +71,9 @@ export default async function ReportsPage({
   const sources = await getSourcesList(organizationId);
   const paymentTypes = await getPaymentTypesList(organizationId);
   const unitTypes = await getUnitTypesList(organizationId);
+
+  // Загружаем текущий курс доллара к лари (из БД или API)
+  const usdRate = await getExchangeRate();
 
   return (
     <ReportsClient
@@ -74,6 +84,7 @@ export default async function ReportsPage({
       sources={sources}
       paymentTypes={paymentTypes}
       unitTypes={unitTypes}
+      usdRate={usdRate}
       initialData={{
         funnelData,
         dealTransitions,
@@ -83,10 +94,13 @@ export default async function ReportsPage({
         paymentRegistry,
         debtors,
         cashFlowReport,
-        discountReport,
-        mortgageReport,
         managerKpi,
-        marketingChannels
+        marketingChannels,
+        contractDrafts,
+        salesDynamics,
+        cohortAnalysis,
+        discountReport,
+        mortgageReport
       }}
     />
   );
