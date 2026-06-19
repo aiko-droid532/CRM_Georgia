@@ -18,7 +18,7 @@ const REPORT_CATALOG = [
   // 2. Финансы
   { id: 'RPT-008', name: 'Реестр платежей', description: 'Все плановые и фактические платежи по договорам. Контроль соответствия графику.', category: 'finance', isCritical: true },
   { id: 'RPT-009', name: 'Реестр дебиторской задолженности', description: 'Сделки с просроченными платежами, количество дней просрочки и расчет пени.', category: 'finance', isCritical: true },
-  { id: 'RPT-010', name: 'Сводный денежный поток', description: 'Прогноз поступлений по графику платежей и сопоставление с финансовым планом.', category: 'finance', isCritical: false },
+  { id: 'RPT-010', name: 'Сводный денежный поток', description: 'Прогноз поступлений по графику платежей и сопоставление с финансовым планом.', category: 'finance', isCritical: true },
   { id: 'RPT-011', name: 'Отчет по индивидуальным скидкам', description: 'Все скидки выше порогов (от 3%) с указанием инициатора, согласующего и маржинальности.', category: 'finance', isCritical: false },
   { id: 'RPT-012', name: 'Отчет по ипотечным сделкам', description: 'Сделки в рассрочку/ипотеку с разбивкой по банкам (TBC, BoG) и конверсией выдачи.', category: 'finance', isCritical: false },
   { id: 'RPT-013', name: 'Отчет по выписанным e-invoice', description: 'Налоговые инвойсы, отправленные в систему RS.ge, и их текущие статусы.', category: 'finance', isCritical: false },
@@ -43,11 +43,11 @@ const REPORT_CATALOG = [
 ];
 
 const CATEGORIES = [
-  { id: 'sales', name: 'Воронка и продажи' },
-  { id: 'finance', name: 'Финансы и оплаты' },
-  { id: 'units', name: 'Квартиры и остатки' },
-  { id: 'clients', name: 'Клиенты' },
-  { id: 'efficiency', name: 'Эффективность' }
+  { id: 'sales', name: '📈 Воронка и продажи' },
+  { id: 'finance', name: '💸 Финансы и оплаты' },
+  { id: 'units', name: '🏢 Квартиры и остатки' },
+  { id: 'clients', name: '👥 Клиенты' },
+  { id: 'efficiency', name: '🎯 Эффективность' }
 ];
 
 interface ReportsClientProps {
@@ -66,6 +66,7 @@ interface ReportsClientProps {
     cashFlow: any[];
     paymentRegistry: any[];
     debtors: any[];
+    cashFlowReport: any[];
     managerKpi: any[];
     marketingChannels: any[];
   };
@@ -174,19 +175,19 @@ function getChannelBySource(source: string): string {
   return 'Direct';
 }
 
-export default function ReportsClient({ 
-  organizationId, 
-  projects, 
-  managers, 
-  blocks, 
-  sources, 
-  paymentTypes, 
-  unitTypes, 
-  initialData 
+export default function ReportsClient({
+  organizationId,
+  projects,
+  managers,
+  blocks,
+  sources,
+  paymentTypes,
+  unitTypes,
+  initialData
 }: ReportsClientProps) {
   const [activeCategory, setActiveCategory] = useState('sales');
   const [activeReportId, setActiveReportId] = useState('RPT-001');
-  
+
   // Общие фильтры
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
@@ -195,7 +196,7 @@ export default function ReportsClient({
   });
   const [endDate, setEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [selectedProject, setSelectedProject] = useState('ALL');
-  
+
   // Дополнительные фильтры для RPT-001 - RPT-004
   const [selectedManager, setSelectedManager] = useState('ALL');
   const [selectedSource, setSelectedSource] = useState('ALL');
@@ -234,7 +235,7 @@ export default function ReportsClient({
   // Генерация тестовых (mock) данных для некритических отчетов
   const mockData = useMemo<any[]>(() => {
     const today = new Date().toISOString().split('T')[0];
-    
+
     switch (activeReportId) {
       case 'RPT-005':
         return [
@@ -253,12 +254,6 @@ export default function ReportsClient({
           { 'Когорта': '2026-05 (Май)', 'Клиентов в когорте': 120, 'Средний чек ($)': 120000, 'Конверсия в Won': '9.2%', 'Ср. цикл сделки (дн)': 14 },
           { 'Когорта': '2026-04 (Апр)', 'Клиентов в когорте': 95, 'Средний чек ($)': 115000, 'Конверсия в Won': '8.4%', 'Ср. цикл сделки (дн)': 16 },
           { 'Когорта': '2026-03 (Март)', 'Клиентов в когорте': 80, 'Средний чек ($)': 125000, 'Конверсия в Won': '10.0%', 'Ср. цикл сделки (дн)': 12 }
-        ];
-      case 'RPT-010':
-        return [
-          { 'Месяц': 'Июнь 2026', 'Прогноз оплат ($)': 450000, 'Фактические оплаты ($)': 380000, 'Отклонение ($)': -70000, 'Исполнение': '84.4%' },
-          { 'Месяц': 'Июль 2026', 'Прогноз оплат ($)': 520000, 'Фактические оплаты ($)': 0, 'Отклонение ($)': 0, 'Исполнение': '—' },
-          { 'Месяц': 'Август 2026', 'Прогноз оплат ($)': 310000, 'Фактические оплаты ($)': 0, 'Отклонение ($)': 0, 'Исполнение': '—' }
         ];
       case 'RPT-011':
         return [
@@ -336,7 +331,7 @@ export default function ReportsClient({
     switch (activeReport.id) {
       case 'RPT-001': { // Воронка продаж
         const isPipeline = funnelViewMode === 'pipeline';
-        
+
         if (isPipeline) {
           // Фильтрация текущего пайплайна сделок
           const filtered = initialData.funnelData.filter((row: any) => {
@@ -377,10 +372,10 @@ export default function ReportsClient({
             const name = STAGE_TRANSLATIONS[stage] || stage;
             const amountUsd = stats.amount;
             const amountGel = stats.amount * 2.7; // Курс GEL к USD
-            
+
             const convPrev = prevCount > 0 ? parseFloat(((stats.count / prevCount) * 100).toFixed(1)) : (idx === 0 ? 100 : 0);
             const convEntry = entryCount > 0 ? parseFloat(((stats.count / entryCount) * 100).toFixed(1)) : 0;
-            
+
             prevCount = stats.count;
 
             return {
@@ -463,7 +458,7 @@ export default function ReportsClient({
 
         // Группируем выигранные продажи по ЖК
         const projectsMap: Record<string, { projectName: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number; pipelineWeightedRevenue: number }> = {};
-        
+
         filteredSales.forEach((row: any) => {
           if (!projectsMap[row.projectId]) {
             projectsMap[row.projectId] = {
@@ -490,7 +485,7 @@ export default function ReportsClient({
           const prob = STAGE_PROBABILITIES[row.stage] || 0;
           const weightedAmount = row.amount * prob;
           const projId = row.projectId;
-          
+
           if (projectsMap[projId]) {
             projectsMap[projId].pipelineWeightedRevenue += weightedAmount;
           } else {
@@ -535,7 +530,7 @@ export default function ReportsClient({
         });
 
         const managersMap: Record<string, { name: string; soldUnits: number; actualRevenue: number; targetUnits: number; targetRevenue: number }> = {};
-        
+
         filteredSales.forEach((row: any) => {
           const mgr = row.managerId;
           if (!managersMap[mgr]) {
@@ -558,7 +553,7 @@ export default function ReportsClient({
           const unitPerf = ((m.soldUnits / m.targetUnits) * 100).toFixed(1) + '%';
           const revPerf = ((m.actualRevenue / m.targetRevenue) * 100).toFixed(1) + '%';
           const kpiStatus = m.actualRevenue >= m.targetRevenue ? 'Выполнен ✅' : 'В процессе ⏳';
-          
+
           return {
             'Рейтинг': idx + 1,
             'Менеджер': m.name,
@@ -647,6 +642,46 @@ export default function ReportsClient({
             'Итого к оплате ($)': Math.round(row.totalDebt)
           };
         });
+      }
+
+      case 'RPT-010': { // Сводный денежный поток
+        const filtered = initialData.cashFlowReport.filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          // Фильтр по периоду: month формат 'YYYY-MM', сравниваем с startDate/endDate
+          if (startDate && row.month < startDate.substring(0, 7)) return false;
+          if (endDate && row.month > endDate.substring(0, 7)) return false;
+          return true;
+        });
+
+        // Группируем по месяцу (суммируем по всем ЖК если не выбран конкретный)
+        const byMonth: Record<string, { scheduled: number; paid: number }> = {};
+        filtered.forEach((row: any) => {
+          if (!byMonth[row.month]) byMonth[row.month] = { scheduled: 0, paid: 0 };
+          byMonth[row.month].scheduled += row.scheduledAmount;
+          byMonth[row.month].paid += row.paidAmount;
+        });
+
+        return Object.entries(byMonth)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([month, data]) => {
+            const isPast = month <= new Date().toISOString().substring(0, 7);
+            const deviation = isPast ? Math.round(data.paid - data.scheduled) : null;
+            const execution = isPast && data.scheduled > 0
+              ? ((data.paid / data.scheduled) * 100).toFixed(1) + '%'
+              : '—';
+            // Форматируем месяц в читаемый вид
+            const [year, mon] = month.split('-');
+            const monthNames = ['', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+              'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+            const label = `${monthNames[parseInt(mon)]} ${year}`;
+            return {
+              'Месяц': label,
+              'Прогноз / план ($)': Math.round(data.scheduled),
+              'Фактически получено ($)': isPast ? Math.round(data.paid) : null,
+              'Отклонение ($)': deviation,
+              'Исполнение': execution
+            };
+          });
       }
 
       case 'RPT-023': { // Эффективность менеджеров
@@ -853,6 +888,30 @@ export default function ReportsClient({
       ];
     }
 
+    if (activeReportId === 'RPT-010') {
+      let totalScheduled = 0, totalPaid = 0, futureScheduled = 0;
+      const currentMonth = new Date().toISOString().substring(0, 7);
+      activeReportData.forEach(row => {
+        totalScheduled += Number(row['Прогноз / план ($)']) || 0;
+        const paid = Number(row['Фактически получено ($)']) || 0;
+        totalPaid += paid;
+        // Считаем будущие платежи (где факт = null)
+        if (row['Фактически получено ($)'] === null) {
+          futureScheduled += Number(row['Прогноз / план ($)']) || 0;
+        }
+      });
+      const execution = totalScheduled > 0
+        ? (((totalScheduled - futureScheduled) > 0
+            ? (totalPaid / (totalScheduled - futureScheduled)) * 100
+            : 0)).toFixed(1) + '%'
+        : '—';
+      return [
+        { label: 'Всего по графику', value: `$${totalScheduled.toLocaleString()}`, subtext: `За выбранный период`, icon: '📅' },
+        { label: 'Фактически получено', value: `$${totalPaid.toLocaleString()}`, subtext: `Исполнение: ${execution}`, icon: '✅' },
+        { label: 'Ожидается (будущие)', value: `$${futureScheduled.toLocaleString()}`, subtext: 'Ещё не наступившие периоды', icon: '🔮' },
+      ];
+    }
+
     // Дефолтные показатели для некритических отчетов
     return [
       { label: 'Всего записей', value: activeReportData.length.toString(), subtext: 'В текущей таблице', icon: '📊' }
@@ -874,7 +933,7 @@ export default function ReportsClient({
 
     // Создаем рабочий лист Excel из массива объектов
     const worksheet = XLSX.utils.json_to_sheet(activeReportData);
-    
+
     // Подгоняем авто-ширину для колонок
     const colWidths = Object.keys(activeReportData[0]).map(key => {
       const maxLen = activeReportData.reduce((max, row) => {
@@ -898,8 +957,8 @@ export default function ReportsClient({
     <div className={styles.container}>
       {/* Левый рубрикатор отчетов */}
       <aside className={styles.sidebar}>
-        <div className={styles.sidebarTitle}>Каталог отчетов</div>
-        
+        <div className={styles.sidebarTitle}>📊 Каталог отчетов</div>
+
         {CATEGORIES.map(cat => (
           <div key={cat.id} className={styles.categoryBlock}>
             <div className={styles.categoryHeader}>{cat.name}</div>
@@ -914,6 +973,7 @@ export default function ReportsClient({
                     <span>{report.name}</span>
                     {report.isCritical && <span className={styles.criticalBadge}>Критич.</span>}
                   </div>
+                  <span className={styles.reportId}>{report.id}</span>
                 </li>
               ))}
             </ul>
@@ -926,14 +986,14 @@ export default function ReportsClient({
         <header className={styles.reportHeader}>
           <div>
             <h1 className={styles.reportTitle}>
-              {activeReport.name}
+              {activeReport.id}: {activeReport.name}
               {!activeReport.isCritical && <span className={styles.draftBadge}>Интерактивный макет</span>}
             </h1>
             <p className={styles.reportDescription}>{activeReport.description}</p>
           </div>
           {reportGenerated && activeReportData.length > 0 && (
             <button className={styles.excelBtn} onClick={handleDownloadExcel}>
-              Скачать в Excel
+              📥 Скачать в Excel
             </button>
           )}
         </header>
@@ -946,14 +1006,14 @@ export default function ReportsClient({
               className={`${styles.modeTab} ${funnelViewMode === 'pipeline' ? styles.activeModeTab : ''}`}
               onClick={() => setFunnelViewMode('pipeline')}
             >
-              Текущие сделки (Pipeline)
+              📊 Текущие сделки (Pipeline)
             </button>
             <button
               type="button"
               className={`${styles.modeTab} ${funnelViewMode === 'conversion' ? styles.activeModeTab : ''}`}
               onClick={() => setFunnelViewMode('conversion')}
             >
-              Исторические переходы (Conversion)
+              🔄 Исторические переходы (Conversion)
             </button>
           </div>
         )}
@@ -965,6 +1025,7 @@ export default function ReportsClient({
               <div key={idx} className={styles.statCard}>
                 <div className={styles.statHeader}>
                   <span className={styles.statLabel}>{stat.label}</span>
+                  <span className={styles.statIcon}>{stat.icon}</span>
                 </div>
                 <div className={styles.statValue}>{stat.value}</div>
                 <div className={styles.statSub}>{stat.subtext}</div>
@@ -1103,7 +1164,7 @@ export default function ReportsClient({
                 onChange={e => setSelectedClientType(e.target.value)}
               >
                 <option value="ALL">Все типы</option>
-                <option value="VIP">VIP клиент</option>
+                <option value="VIP">⭐ VIP клиент</option>
                 <option value="REGULAR">Обычный клиент</option>
               </select>
             </div>
@@ -1159,9 +1220,9 @@ export default function ReportsClient({
                 onChange={e => setSelectedPaymentStatus(e.target.value)}
               >
                 <option value="ALL">Все статусы</option>
-                <option value="PAID">Оплачено</option>
-                <option value="OVERDUE">Просрочено</option>
-                <option value="PENDING">Ожидается</option>
+                <option value="PAID">✅ Оплачено</option>
+                <option value="OVERDUE">🔴 Просрочено</option>
+                <option value="PENDING">⏳ Ожидается</option>
               </select>
             </div>
           )}
@@ -1200,7 +1261,7 @@ export default function ReportsClient({
           )}
 
           <button className={styles.searchBtn} onClick={() => setReportGenerated(true)}>
-            Сформировать
+            🔍 Сформировать
           </button>
         </section>
 
@@ -1227,8 +1288,8 @@ export default function ReportsClient({
                         const val = row[header];
                         return (
                           <td key={header}>
-                            {typeof val === 'number' && header.includes('($)') 
-                              ? `$${val.toLocaleString()}` 
+                            {typeof val === 'number' && header.includes('($)')
+                              ? `$${val.toLocaleString()}`
                               : typeof val === 'number' && header.includes('(GEL)')
                               ? `₾${val.toLocaleString()}`
                               : val
