@@ -102,20 +102,20 @@ export async function getProjectSalesReportData(organizationId: string) {
         COALESCE(d."updatedAt", u."updatedAt") as "wonAt",
         COALESCE(u.price, 0)::double precision as "price",
         b.id as "blockId",
-        u.type as "unitType"
+        u.type as "unitType",
+        COALESCE(st."targetUnits", 0)::int as "targetUnits",
+        COALESCE(st."targetRevenue", 0.0)::double precision as "targetRevenue"
       FROM "Unit" u
       JOIN "Block" b ON u."blockId" = b.id
       JOIN "Project" p ON b."projectId" = p.id
       LEFT JOIN "Deal" d ON d."unitId" = u.id AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
+      LEFT JOIN "SalesTarget" st ON st."projectId" = p.id AND st."targetType" = 'PROJECT'
       WHERE p."organizationId" = ${organizationId}
         AND (u.status IN ('SOLD', 'DOWN_PAYMENT_RECEIVED') OR d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED'))
     `;
 
     return rawData.map(row => {
       const price = convertPrice(row.price, row.projectName);
-      const targetUnits = 10;
-      const targetRevenue = 1500000.00; // План в USD
-
       return {
         dealId: row.dealId,
         projectId: row.projectId,
@@ -124,8 +124,8 @@ export async function getProjectSalesReportData(organizationId: string) {
         price,
         blockId: row.blockId,
         unitType: row.unitType,
-        targetUnits,
-        targetRevenue
+        targetUnits: row.targetUnits,
+        targetRevenue: row.targetRevenue
       };
     });
   } catch (e) {
@@ -144,28 +144,28 @@ export async function getManagerSalesReportData(organizationId: string) {
         p.id as "projectId",
         p."nameRu" as "projectName",
         COALESCE(d."updatedAt", u."updatedAt") as "wonAt",
-        COALESCE(u.price, 0)::double precision as "price"
+        COALESCE(u.price, 0)::double precision as "price",
+        COALESCE(st."targetUnits", 0)::int as "targetUnits",
+        COALESCE(st."targetRevenue", 0.0)::double precision as "targetRevenue"
       FROM "Unit" u
       JOIN "Block" b ON u."blockId" = b.id
       JOIN "Project" p ON b."projectId" = p.id
       LEFT JOIN "Deal" d ON d."unitId" = u.id AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
+      LEFT JOIN "SalesTarget" st ON st."managerId" = d."managerId" AND st."targetType" = 'MANAGER'
       WHERE p."organizationId" = ${organizationId}
         AND (u.status IN ('SOLD', 'DOWN_PAYMENT_RECEIVED') OR d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED'))
     `;
 
     return rawData.map(row => {
       const price = convertPrice(row.price, row.projectName);
-      const targetUnits = 5;
-      const targetRevenue = 750000.00; // План в USD
-
       return {
         dealId: row.dealId,
         managerId: row.managerId,
         projectId: row.projectId,
         wonAt: row.wonAt ? row.wonAt.toISOString().split('T')[0] : null,
         price,
-        targetUnits,
-        targetRevenue
+        targetUnits: row.targetUnits,
+        targetRevenue: row.targetRevenue
       };
     });
   } catch (e) {
@@ -561,8 +561,8 @@ export async function getContractDraftsReportData(organizationId: string) {
         a_prep."createdAt" as "draftCreatedAt",
         a_signed."createdAt" as "draftApprovedAt",
         d.status::text as "currentDealStatus",
-        a_prep."authorId" as "initiator",
-        a_signed."authorId" as "approver"
+        a_prep."managerId" as "initiator",
+        a_signed."managerId" as "approver"
       FROM "AuditLog" a_prep
       JOIN "Deal" d ON a_prep."entityId" = d.id
       JOIN "Lead" l ON d."leadId" = l.id
@@ -602,18 +602,30 @@ export async function getContractDraftsReportData(organizationId: string) {
 // RPT-006: Динамика продаж (Посещения/встречи отсутствуют в схеме, берем Лиды, Брони, Договоры, Суммы, Оплаты)
 export async function getSalesDynamicsReportData(organizationId: string) {
   try {
-    // 1. Лиды
+    // 1. Лиды (уникальные, исключая дублирование из-за джойнов с несколькими сделками)
     const leads: any[] = await prisma.$queryRaw`
       SELECT 
         l.id, 
         l."createdAt" as "createdAt",
-        p.id as "projectId",
-        p."nameRu" as "projectName"
+        (
+          SELECT p.id
+          FROM "Deal" d
+          JOIN "Unit" u ON d."unitId" = u.id
+          JOIN "Block" b ON u."blockId" = b.id
+          JOIN "Project" p ON b."projectId" = p.id
+          WHERE d."leadId" = l.id
+          LIMIT 1
+        ) as "projectId",
+        (
+          SELECT p."nameRu"
+          FROM "Deal" d
+          JOIN "Unit" u ON d."unitId" = u.id
+          JOIN "Block" b ON u."blockId" = b.id
+          JOIN "Project" p ON b."projectId" = p.id
+          WHERE d."leadId" = l.id
+          LIMIT 1
+        ) as "projectName"
       FROM "Lead" l
-      LEFT JOIN "Deal" d ON d."leadId" = l.id
-      LEFT JOIN "Unit" u ON d."unitId" = u.id
-      LEFT JOIN "Block" b ON u."blockId" = b.id
-      LEFT JOIN "Project" p ON b."projectId" = p.id
       WHERE l."organizationId" = ${organizationId}
     `;
 
@@ -757,17 +769,52 @@ export async function getCohortAnalysisReportData(organizationId: string) {
         l.id as "leadId",
         COALESCE(l.source, 'Не указан') as "source",
         l."createdAt" as "leadCreatedAt",
-        d.id as "dealId",
-        d.status::text as "dealStatus",
-        d."updatedAt" as "dealUpdatedAt",
-        COALESCE(u.price, 0)::double precision as "price",
-        p."nameRu" as "projectName",
-        p.id as "projectId"
+        (
+          SELECT d.id
+          FROM "Deal" d
+          WHERE d."leadId" = l.id
+          ORDER BY CASE WHEN d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED') THEN 1 ELSE 2 END ASC, d."updatedAt" DESC
+          LIMIT 1
+        ) as "dealId",
+        (
+          SELECT d.status::text
+          FROM "Deal" d
+          WHERE d."leadId" = l.id
+          ORDER BY CASE WHEN d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED') THEN 1 ELSE 2 END ASC, d."updatedAt" DESC
+          LIMIT 1
+        ) as "dealStatus",
+        (
+          SELECT d."updatedAt"
+          FROM "Deal" d
+          WHERE d."leadId" = l.id
+          ORDER BY CASE WHEN d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED') THEN 1 ELSE 2 END ASC, d."updatedAt" DESC
+          LIMIT 1
+        ) as "dealUpdatedAt",
+        (
+          SELECT COALESCE(SUM(u.price), 0)::double precision
+          FROM "Deal" d
+          JOIN "Unit" u ON d."unitId" = u.id
+          WHERE d."leadId" = l.id AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
+        ) as "price",
+        (
+          SELECT p."nameRu"
+          FROM "Deal" d
+          JOIN "Unit" u ON d."unitId" = u.id
+          JOIN "Block" b ON u."blockId" = b.id
+          JOIN "Project" p ON b."projectId" = p.id
+          WHERE d."leadId" = l.id
+          LIMIT 1
+        ) as "projectName",
+        (
+          SELECT p.id
+          FROM "Deal" d
+          JOIN "Unit" u ON d."unitId" = u.id
+          JOIN "Block" b ON u."blockId" = b.id
+          JOIN "Project" p ON b."projectId" = p.id
+          WHERE d."leadId" = l.id
+          LIMIT 1
+        ) as "projectId"
       FROM "Lead" l
-      LEFT JOIN "Deal" d ON d."leadId" = l.id
-      LEFT JOIN "Unit" u ON d."unitId" = u.id
-      LEFT JOIN "Block" b ON u."blockId" = b.id
-      LEFT JOIN "Project" p ON b."projectId" = p.id
       WHERE l."organizationId" = ${organizationId}
     `;
 
