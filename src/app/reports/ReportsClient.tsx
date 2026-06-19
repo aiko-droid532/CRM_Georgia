@@ -11,9 +11,9 @@ const REPORT_CATALOG = [
   { id: 'RPT-002', name: 'План/факт продаж по ЖК', description: 'Сопоставление плана продаж в деньгах и квартирах сWon-сделками по проектам.', category: 'sales', isCritical: true },
   { id: 'RPT-003', name: 'План/факт по менеджерам', description: 'Индивидуальные рейтинги выполнения планов менеджерами по объему продаж.', category: 'sales', isCritical: true },
   { id: 'RPT-004', name: 'Сводный отчет по продажам', description: 'Денежный поток от продаж: суммы подписанных договоров, оплат и ожидаемых платежей.', category: 'sales', isCritical: true },
-  { id: 'RPT-005', name: 'Реестр заявок на договор', description: 'Все заявки на договор со статусами согласования и временем обработки (идентификация bottleneck).', category: 'sales', isCritical: true },
-  { id: 'RPT-006', name: 'Динамика продаж', description: 'Сравнение посещений, заявок, броней и платежей между периодами. Тренд-анализ.', category: 'sales', isCritical: true },
-  { id: 'RPT-007', name: 'Когортный анализ клиентов', description: 'Группировка клиентов по когортам первого контакта. Время до успешной сделки.', category: 'sales', isCritical: true },
+  { id: 'RPT-005', name: 'Реестр заявок на договор', description: 'Все заявки на договор со статусами согласования и временем обработки (идентификация bottleneck).', category: 'sales', isCritical: false },
+  { id: 'RPT-006', name: 'Динамика продаж', description: 'Сравнение посещений, заявок, броней и платежей между периодами. Тренд-анализ.', category: 'sales', isCritical: false },
+  { id: 'RPT-007', name: 'Когортный анализ клиентов', description: 'Группировка клиентов по когортам первого контакта. Время до успешной сделки.', category: 'sales', isCritical: false },
 
   // 2. Финансы
   { id: 'RPT-008', name: 'Реестр платежей', description: 'Все плановые и фактические платежи по договорам. Контроль соответствия графику.', category: 'finance', isCritical: true },
@@ -42,6 +42,11 @@ const REPORT_CATALOG = [
   { id: 'RPT-025', name: 'Отчет по броням', description: 'Статистика активных и снятых устных/платных броней с причинами отмены.', category: 'efficiency', isCritical: false }
 ];
 
+const IMPLEMENTED_REPORTS = [
+  'RPT-001', 'RPT-002', 'RPT-003', 'RPT-004', 'RPT-005', 'RPT-006', 'RPT-007',
+  'RPT-008', 'RPT-009', 'RPT-010', 'RPT-011', 'RPT-012', 'RPT-023', 'RPT-024'
+];
+
 const CATEGORIES = [
   { id: 'sales', name: 'Воронка и продажи' },
   { id: 'finance', name: 'Финансы и оплаты' },
@@ -67,14 +72,15 @@ interface ReportsClientProps {
     paymentRegistry: any[];
     debtors: any[];
     cashFlowReport: any[];
-    discountReport: any[];
-    mortgageReport: any[];
     managerKpi: any[];
     marketingChannels: any[];
     contractDrafts: any[];
     salesDynamics: { leads: any[]; bookings: any[]; contracts: any[]; payments: any[]; visits: any[]; applications: any[] };
     cohortAnalysis: any[];
+    discountReport: any[];
+    mortgageReport: any[];
   };
+  usdRate?: number;
 }
 
 const CHANNELS = ['Social Media', 'Search Engine', 'Messenger', 'Portal', 'Direct'];
@@ -188,7 +194,8 @@ export default function ReportsClient({
   sources,
   paymentTypes,
   unitTypes,
-  initialData
+  initialData,
+  usdRate = 2.7
 }: ReportsClientProps) {
   const [activeCategory, setActiveCategory] = useState('sales');
   const [activeReportId, setActiveReportId] = useState('RPT-001');
@@ -290,55 +297,6 @@ export default function ReportsClient({
           { 'Когорта': '2026-04 (Апр)', 'Клиентов в когорте': 95, 'Средний чек ($)': 115000, 'Конверсия в Won': '8.4%', 'Ср. цикл сделки (дн)': 16 },
           { 'Когорта': '2026-03 (Март)', 'Клиентов в когорте': 80, 'Средний чек ($)': 125000, 'Конверсия в Won': '10.0%', 'Ср. цикл сделки (дн)': 12 }
         ];
-      case 'RPT-011': { // Отчёт по индивидуальным скидкам
-        const filtered = initialData.discountReport.filter((row: any) => {
-          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
-          if (startDate && row.createdAt < startDate) return false;
-          if (endDate && row.createdAt > endDate) return false;
-          return true;
-        });
-        return filtered.map((row: any) => ({
-          'Сделка': `#${row.dealId.substring(0, 8).toUpperCase()}`,
-          'Клиент': row.clientName,
-          'Квартира': `№${row.unitNumber}`,
-          'Менеджер': row.managerId,
-          'Базовая цена ($)': Math.round(row.basePrice),
-          'Скидка (%)': row.discountPct + '%',
-          'Сумма скидки ($)': Math.round(row.discountAmount),
-          'Цена со скидкой ($)': Math.round(row.finalPrice),
-          'Дата сделки': row.createdAt
-        }));
-      }
-      case 'RPT-012': { // Отчёт по ипотечным сделкам
-        const STATUS_LABELS: Record<string, string> = {
-          'APPROVED': '✅ Одобрено',
-          'PENDING': '⏳ На рассмотрении',
-          'REJECTED': '❌ Отказ',
-          'NONE': '— Не подавалась',
-        };
-        const filtered = initialData.mortgageReport.filter((row: any) => {
-          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
-          if (startDate && row.createdAt < startDate) return false;
-          if (endDate && row.createdAt > endDate) return false;
-          return true;
-        });
-        return filtered.map((row: any) => ({
-          'Сделка': `#${row.dealId.substring(0, 8).toUpperCase()}`,
-          'Клиент': row.clientName,
-          'Телефон': row.clientPhone,
-          'Квартира': `№${row.unitNumber}`,
-          'Менеджер': row.managerId,
-          'Банк': row.mortgageBank,
-          'Первый взнос ($)': Math.round(row.downPayment),
-          'Сумма ипотеки ($)': Math.round(row.loanAmount),
-          'Стоимость объекта ($)': Math.round(row.unitPrice),
-          'Статус заявки': STATUS_LABELS[row.mortgageStatus] || row.mortgageStatus,
-          'Комментарий': row.mortgageComment,
-          'Дата сделки': row.createdAt
-        }));
-      }
       case 'RPT-013':
         return [
           { 'Номер инвойса': 'INV-2026-0041', 'Клиент': 'Кайсар Бейсекбаев', 'Дата выписки': today, 'Сумма (GEL)': 245000, 'Статус RS.ge': 'Успешно отправлен' },
@@ -398,7 +356,7 @@ export default function ReportsClient({
 
   // Обработка реальных данных для MVP-1 критических отчетов
   const activeReportData = useMemo<any[]>(() => {
-    if (!activeReport.isCritical) {
+    if (!IMPLEMENTED_REPORTS.includes(activeReport.id)) {
       return mockData;
     }
 
@@ -445,7 +403,7 @@ export default function ReportsClient({
             const stats = stagesMap[stage];
             const name = STAGE_TRANSLATIONS[stage] || stage;
             const amountUsd = stats.amount;
-            const amountGel = stats.amount * 2.7; // Курс GEL к USD
+            const amountGel = stats.amount * usdRate; // Курс GEL к USD
 
             const convPrev = prevCount > 0 ? parseFloat(((stats.count / prevCount) * 100).toFixed(1)) : (idx === 0 ? 100 : 0);
             const convEntry = entryCount > 0 ? parseFloat(((stats.count / entryCount) * 100).toFixed(1)) : 0;
@@ -501,7 +459,7 @@ export default function ReportsClient({
             const count = stagesMap[stage].size;
             const name = STAGE_TRANSLATIONS[stage] || stage;
             const amountUsd = amountsMap[stage];
-            const amountGel = amountUsd * 2.7;
+            const amountGel = amountUsd * usdRate;
 
             const convPrev = prevCount > 0 ? parseFloat(((count / prevCount) * 100).toFixed(1)) : (idx === 0 ? 100 : 0);
             const convEntry = entryCount > 0 ? parseFloat(((count / entryCount) * 100).toFixed(1)) : 0;
@@ -1093,6 +1051,49 @@ export default function ReportsClient({
         });
       }
 
+      case 'RPT-011': { // Отчет по индивидуальным скидкам
+        const filtered = initialData.discountReport.filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+          if (startDate && row.createdAt && row.createdAt < startDate) return false;
+          if (endDate && row.createdAt && row.createdAt > endDate) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'Сделка': row.dealId.startsWith('test') ? '#Тестовая сделка' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
+          'Клиент': row.clientName,
+          'Квартира': `№${row.unitNumber}`,
+          'Базовая цена ($)': Math.round(row.basePrice),
+          'Индивидуальная скидка (%)': `${row.discountPct}%`,
+          'Сумма скидки ($)': Math.round(row.discountAmount),
+          'Дата сделки': row.createdAt
+        }));
+      }
+
+      case 'RPT-012': { // Отчет по ипотечным сделкам
+        const filtered = initialData.mortgageReport.filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+          if (startDate && row.createdAt && row.createdAt < startDate) return false;
+          if (endDate && row.createdAt && row.createdAt > endDate) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'Сделка': row.dealId.startsWith('test') ? '#Тестовая сделка' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
+          'Клиент': row.clientName,
+          'Телефон': row.clientPhone,
+          'Квартира': `№${row.unitNumber}`,
+          'Цена квартиры ($)': Math.round(row.unitPrice),
+          'Банк': row.mortgageBank,
+          'Сумма кредита ($)': Math.round(row.loanAmount),
+          'Первоначальный взнос ($)': Math.round(row.downPayment),
+          'Статус ипотеки': row.mortgageStatus === 'APPROVED' ? 'Одобрено' : row.mortgageStatus === 'REJECTED' ? 'Отклонено' : 'На рассмотрении',
+          'Комментарий': row.mortgageComment
+        }));
+      }
+
       default:
         return [];
     }
@@ -1332,6 +1333,7 @@ export default function ReportsClient({
       ];
     }
 
+    // Дефолтные показатели для некритических отчетов
     if (activeReportId === 'RPT-011') {
       let totalDiscountAmount = 0, maxDiscount = 0, totalBase = 0;
       activeReportData.forEach(row => {
@@ -1352,9 +1354,10 @@ export default function ReportsClient({
       let totalLoan = 0, approved = 0, pending = 0, rejected = 0;
       activeReportData.forEach(row => {
         totalLoan += Number(row['Сумма ипотеки ($)']) || 0;
-        if (row['Статус заявки']?.includes('Одобрено')) approved++;
-        if (row['Статус заявки']?.includes('рассмотрении')) pending++;
-        if (row['Статус заявки']?.includes('Отказ')) rejected++;
+        const status = row['Статус заявки'] || '';
+        if (status.includes('Одобрено')) approved++;
+        if (status.includes('рассмотрении')) pending++;
+        if (status.includes('Отказ')) rejected++;
       });
       const approvalRate = activeReportData.length > 0
         ? ((approved / activeReportData.length) * 100).toFixed(0) + '%'
@@ -1366,7 +1369,6 @@ export default function ReportsClient({
       ];
     }
 
-    // Дефолтные показатели для некритических отчетов
     return [
       { label: 'Всего записей', value: activeReportData.length.toString(), subtext: 'В текущей таблице', icon: '📊' }
     ];
@@ -1440,7 +1442,7 @@ export default function ReportsClient({
           <div>
             <h1 className={styles.reportTitle}>
               {activeReport.name}
-              {!activeReport.isCritical && <span className={styles.draftBadge}>Интерактивный макет</span>}
+              {!IMPLEMENTED_REPORTS.includes(activeReport.id) && <span className={styles.draftBadge}>Интерактивный макет</span>}
             </h1>
             <p className={styles.reportDescription}>{activeReport.description}</p>
           </div>
