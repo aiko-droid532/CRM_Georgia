@@ -11,9 +11,9 @@ const REPORT_CATALOG = [
   { id: 'RPT-002', name: 'План/факт продаж по ЖК', description: 'Сопоставление плана продаж в деньгах и квартирах сWon-сделками по проектам.', category: 'sales', isCritical: true },
   { id: 'RPT-003', name: 'План/факт по менеджерам', description: 'Индивидуальные рейтинги выполнения планов менеджерами по объему продаж.', category: 'sales', isCritical: true },
   { id: 'RPT-004', name: 'Сводный отчет по продажам', description: 'Денежный поток от продаж: суммы подписанных договоров, оплат и ожидаемых платежей.', category: 'sales', isCritical: true },
-  { id: 'RPT-005', name: 'Реестр заявок на договор', description: 'Все заявки на договор со статусами согласования и временем обработки (идентификация bottleneck).', category: 'sales', isCritical: false },
-  { id: 'RPT-006', name: 'Динамика продаж', description: 'Сравнение посещений, заявок, броней и платежей между периодами. Тренд-анализ.', category: 'sales', isCritical: false },
-  { id: 'RPT-007', name: 'Когортный анализ клиентов', description: 'Группировка клиентов по когортам первого контакта. Время до успешной сделки.', category: 'sales', isCritical: false },
+  { id: 'RPT-005', name: 'Реестр заявок на договор', description: 'Все заявки на договор со статусами согласования и временем обработки (идентификация bottleneck).', category: 'sales', isCritical: true },
+  { id: 'RPT-006', name: 'Динамика продаж', description: 'Сравнение посещений, заявок, броней и платежей между периодами. Тренд-анализ.', category: 'sales', isCritical: true },
+  { id: 'RPT-007', name: 'Когортный анализ клиентов', description: 'Группировка клиентов по когортам первого контакта. Время до успешной сделки.', category: 'sales', isCritical: true },
 
   // 2. Финансы
   { id: 'RPT-008', name: 'Реестр платежей', description: 'Все плановые и фактические платежи по договорам. Контроль соответствия графику.', category: 'finance', isCritical: true },
@@ -69,6 +69,9 @@ interface ReportsClientProps {
     cashFlowReport: any[];
     managerKpi: any[];
     marketingChannels: any[];
+    contractDrafts: any[];
+    salesDynamics: { leads: any[]; bookings: any[]; contracts: any[]; payments: any[]; visits: any[]; applications: any[] };
+    cohortAnalysis: any[];
   };
 }
 
@@ -214,6 +217,17 @@ export default function ReportsClient({
   const [selectedOverdueBucket, setSelectedOverdueBucket] = useState('ALL'); // ALL | 1-30 | 30-60 | 60-90 | 90+
   const [selectedDebtManager, setSelectedDebtManager] = useState('ALL');
 
+  // Фильтры для RPT-005
+  const [draftStatusFilter, setDraftStatusFilter] = useState('ALL'); // ALL | IN_PROGRESS | APPROVED | REJECTED
+  const [selectedInitiator, setSelectedInitiator] = useState('ALL');
+  const [selectedApprover, setSelectedApprover] = useState('ALL');
+
+  // Фильтры для RPT-006
+  const [dynamicsInterval, setDynamicsInterval] = useState('month'); // day | week | month | quarter
+
+  // Фильтры для RPT-007
+  const [cohortInterval, setCohortInterval] = useState('month'); // week | month | quarter
+
   // Стейт для «Сформировать» — таблица и KPI-карточки показываются после нажатия
   const [reportGenerated, setReportGenerated] = useState(false);
 
@@ -221,6 +235,14 @@ export default function ReportsClient({
   const activeReport = useMemo(() => {
     return REPORT_CATALOG.find(r => r.id === activeReportId) || REPORT_CATALOG[0];
   }, [activeReportId]);
+
+  const initiators = useMemo(() => {
+    return Array.from(new Set(initialData.contractDrafts.map((row: any) => row.initiator).filter(Boolean))) as string[];
+  }, [initialData.contractDrafts]);
+
+  const approvers = useMemo(() => {
+    return Array.from(new Set(initialData.contractDrafts.map((row: any) => row.approver).filter(Boolean))) as string[];
+  }, [initialData.contractDrafts]);
 
   // При смене отчёта — сбрасываем специфичные фильтры и скрываем таблицу
   const handleSelectReport = (id: string, catId: string) => {
@@ -230,6 +252,11 @@ export default function ReportsClient({
     setSelectedPaymentStatus('ALL');
     setSelectedOverdueBucket('ALL');
     setSelectedDebtManager('ALL');
+    setDraftStatusFilter('ALL');
+    setSelectedInitiator('ALL');
+    setSelectedApprover('ALL');
+    setDynamicsInterval('month');
+    setCohortInterval('month');
     // Для денежного потока расширяем период — показываем прогноз на год вперёд
     if (id === 'RPT-010') {
       const yearAhead = new Date();
@@ -558,7 +585,7 @@ export default function ReportsClient({
         return sortedManagers.map((m, idx) => {
           const unitPerf = ((m.soldUnits / m.targetUnits) * 100).toFixed(1) + '%';
           const revPerf = ((m.actualRevenue / m.targetRevenue) * 100).toFixed(1) + '%';
-          const kpiStatus = m.actualRevenue >= m.targetRevenue ? 'Выполнен ✅' : 'В процессе ⏳';
+          const kpiStatus = m.actualRevenue >= m.targetRevenue ? 'Выполнен' : 'В процессе';
 
           return {
             'Рейтинг': idx + 1,
@@ -595,6 +622,274 @@ export default function ReportsClient({
           'Менеджер': row.managerId,
           'Дата заключения': row.createdAt
         }));
+      }
+
+      case 'RPT-005': { // Реестр заявок на договор
+        const filtered = initialData.contractDrafts.filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerName !== selectedManager) return false;
+          if (startDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) < startDate) return false;
+          if (endDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) > endDate) return false;
+          
+          let status = 'IN_PROGRESS';
+          if (row.draftApprovedAt) {
+            status = 'APPROVED';
+          } else if (row.currentDealStatus === 'FAILED' || row.currentDealStatus === 'CANCELLED') {
+            status = 'REJECTED';
+          }
+          
+          if (draftStatusFilter !== 'ALL' && status !== draftStatusFilter) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => {
+          let status = 'В работе';
+          let hours = 0;
+          if (row.draftApprovedAt) {
+            status = 'Одобрен';
+            hours = (new Date(row.draftApprovedAt).getTime() - new Date(row.draftCreatedAt).getTime()) / (1000 * 60 * 60);
+          } else if (row.currentDealStatus === 'FAILED' || row.currentDealStatus === 'CANCELLED') {
+            status = 'Отклонен';
+            hours = (new Date().getTime() - new Date(row.draftCreatedAt).getTime()) / (1000 * 60 * 60);
+          } else {
+            status = 'В работе';
+            hours = (new Date().getTime() - new Date(row.draftCreatedAt).getTime()) / (1000 * 60 * 60);
+          }
+
+          return {
+            'Идентификатор': row.dealId.startsWith('test') ? '#Тестовая сделка' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
+            'Дата создания': row.draftCreatedAt ? row.draftCreatedAt.substring(0, 10) : '—',
+            'Менеджер': row.managerName || 'Не назначен',
+            'Клиент': row.clientName || 'Не указан',
+            'Проект': row.projectName || '—',
+            'Помещение': row.unitNumber ? `№${row.unitNumber}` : '—',
+            'Статус': status,
+            'Время в работе (ч)': parseFloat(hours.toFixed(1))
+          };
+        });
+      }
+
+      case 'RPT-006': { // Динамика продаж
+        const getIntervalKey = (dateStr: string) => {
+          if (!dateStr) return 'unknown';
+          const d = new Date(dateStr);
+          if (isNaN(d.getTime())) return 'unknown';
+          
+          if (dynamicsInterval === 'day') {
+            return dateStr.substring(0, 10);
+          }
+          if (dynamicsInterval === 'week') {
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            const monday = new Date(d.setDate(diff));
+            return monday.toISOString().substring(0, 10);
+          }
+          if (dynamicsInterval === 'month') {
+            return dateStr.substring(0, 7);
+          }
+          if (dynamicsInterval === 'quarter') {
+            const quarter = Math.floor(d.getMonth() / 3) + 1;
+            return `${d.getFullYear()}-Q${quarter}`;
+          }
+          return dateStr.substring(0, 10);
+        };
+
+        const groups: Record<string, { leads: number; visits: number; applications: number; bookings: number; contracts: number; contractAmount: number; paymentsAmount: number }> = {};
+
+        initialData.salesDynamics.leads.forEach((l: any) => {
+          if (selectedProject !== 'ALL' && l.projectId !== selectedProject) return;
+          if (startDate && l.createdAt && l.createdAt.substring(0, 10) < startDate) return;
+          if (endDate && l.createdAt && l.createdAt.substring(0, 10) > endDate) return;
+          
+          const key = getIntervalKey(l.createdAt);
+          if (key === 'unknown') return;
+          if (!groups[key]) {
+            groups[key] = { leads: 0, visits: 0, applications: 0, bookings: 0, contracts: 0, contractAmount: 0, paymentsAmount: 0 };
+          }
+          groups[key].leads += 1;
+        });
+
+        initialData.salesDynamics.visits.forEach((v: any) => {
+          if (selectedProject !== 'ALL' && v.projectId !== selectedProject) return;
+          if (startDate && v.visitedAt && v.visitedAt.substring(0, 10) < startDate) return;
+          if (endDate && v.visitedAt && v.visitedAt.substring(0, 10) > endDate) return;
+          
+          const key = getIntervalKey(v.visitedAt);
+          if (key === 'unknown') return;
+          if (!groups[key]) {
+            groups[key] = { leads: 0, visits: 0, applications: 0, bookings: 0, contracts: 0, contractAmount: 0, paymentsAmount: 0 };
+          }
+          groups[key].visits += 1;
+        });
+
+        initialData.salesDynamics.applications.forEach((a: any) => {
+          if (selectedProject !== 'ALL' && a.projectId !== selectedProject) return;
+          if (startDate && a.appliedAt && a.appliedAt.substring(0, 10) < startDate) return;
+          if (endDate && a.appliedAt && a.appliedAt.substring(0, 10) > endDate) return;
+          
+          const key = getIntervalKey(a.appliedAt);
+          if (key === 'unknown') return;
+          if (!groups[key]) {
+            groups[key] = { leads: 0, visits: 0, applications: 0, bookings: 0, contracts: 0, contractAmount: 0, paymentsAmount: 0 };
+          }
+          groups[key].applications += 1;
+        });
+
+        initialData.salesDynamics.bookings.forEach((b: any) => {
+          if (selectedProject !== 'ALL' && b.projectId !== selectedProject) return;
+          if (startDate && b.createdAt && b.createdAt.substring(0, 10) < startDate) return;
+          if (endDate && b.createdAt && b.createdAt.substring(0, 10) > endDate) return;
+          
+          const key = getIntervalKey(b.createdAt);
+          if (key === 'unknown') return;
+          if (!groups[key]) {
+            groups[key] = { leads: 0, visits: 0, applications: 0, bookings: 0, contracts: 0, contractAmount: 0, paymentsAmount: 0 };
+          }
+          groups[key].bookings += 1;
+        });
+
+        initialData.salesDynamics.contracts.forEach((c: any) => {
+          if (selectedProject !== 'ALL' && c.projectId !== selectedProject) return;
+          if (startDate && c.signedAt && c.signedAt.substring(0, 10) < startDate) return;
+          if (endDate && c.signedAt && c.signedAt.substring(0, 10) > endDate) return;
+          
+          const key = getIntervalKey(c.signedAt);
+          if (key === 'unknown') return;
+          if (!groups[key]) {
+            groups[key] = { leads: 0, visits: 0, applications: 0, bookings: 0, contracts: 0, contractAmount: 0, paymentsAmount: 0 };
+          }
+          groups[key].contracts += 1;
+          groups[key].contractAmount += c.amount;
+        });
+
+        initialData.salesDynamics.payments.forEach((p: any) => {
+          if (selectedProject !== 'ALL' && p.projectId !== selectedProject) return;
+          if (startDate && p.paidAt && p.paidAt.substring(0, 10) < startDate) return;
+          if (endDate && p.paidAt && p.paidAt.substring(0, 10) > endDate) return;
+          
+          const key = getIntervalKey(p.paidAt);
+          if (key === 'unknown') return;
+          if (!groups[key]) {
+            groups[key] = { leads: 0, visits: 0, applications: 0, bookings: 0, contracts: 0, contractAmount: 0, paymentsAmount: 0 };
+          }
+          groups[key].paymentsAmount += p.paidAmount;
+        });
+
+        const formatPeriodLabel = (key: string) => {
+          if (dynamicsInterval === 'month') {
+            const [year, mon] = key.split('-');
+            const monthNames = ['', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+              'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+            return `${monthNames[parseInt(mon)]} ${year}`;
+          }
+          if (dynamicsInterval === 'week') {
+            return `Неделя с ${key}`;
+          }
+          if (dynamicsInterval === 'quarter') {
+            const [year, q] = key.split('-');
+            return `${q.replace('Q', '')} кв. ${year}`;
+          }
+          return key;
+        };
+
+        return Object.entries(groups)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, data]) => ({
+            'Период': formatPeriodLabel(key),
+            'Лиды': data.leads,
+            'Посещения': data.visits,
+            'Заявки': data.applications,
+            'Брони': data.bookings,
+            'Договоры': data.contracts,
+            'Сумма договоров ($)': Math.round(data.contractAmount),
+            'Поступило оплат ($)': Math.round(data.paymentsAmount)
+          }));
+      }
+
+      case 'RPT-007': { // Когортный анализ клиентов
+        const getCohortKey = (dateStr: string) => {
+          if (!dateStr) return 'unknown';
+          const d = new Date(dateStr);
+          if (isNaN(d.getTime())) return 'unknown';
+          
+          if (cohortInterval === 'week') {
+            const day = d.getDay();
+            const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+            const monday = new Date(d.setDate(diff));
+            return monday.toISOString().substring(0, 10);
+          }
+          if (cohortInterval === 'month') {
+            return dateStr.substring(0, 7);
+          }
+          if (cohortInterval === 'quarter') {
+            const quarter = Math.floor(d.getMonth() / 3) + 1;
+            return `${d.getFullYear()}-Q${quarter}`;
+          }
+          return dateStr.substring(0, 7);
+        };
+
+        const cohorts: Record<string, { totalLeads: number; wonDeals: number; totalRevenue: number; totalCycleDays: number }> = {};
+
+        initialData.cohortAnalysis.forEach((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return;
+          if (startDate && row.leadCreatedAt && row.leadCreatedAt.substring(0, 10) < startDate) return;
+          if (endDate && row.leadCreatedAt && row.leadCreatedAt.substring(0, 10) > endDate) return;
+          if (selectedSource !== 'ALL' && row.source !== selectedSource) return;
+          if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return;
+          
+          const key = getCohortKey(row.leadCreatedAt);
+          if (key === 'unknown') return;
+          if (!cohorts[key]) {
+            cohorts[key] = { totalLeads: 0, wonDeals: 0, totalRevenue: 0, totalCycleDays: 0 };
+          }
+          cohorts[key].totalLeads += 1;
+          
+          const isWon = row.dealStatus === 'SUCCESS' || row.dealStatus === 'PAYMENT_CONFIRMED';
+          if (isWon) {
+            cohorts[key].wonDeals += 1;
+            cohorts[key].totalRevenue += row.price || 0;
+            
+            if (row.leadCreatedAt && row.dealUpdatedAt) {
+              const leadDate = new Date(row.leadCreatedAt);
+              const dealDate = new Date(row.dealUpdatedAt);
+              const diffDays = Math.max(0, (dealDate.getTime() - leadDate.getTime()) / (1000 * 60 * 60 * 24));
+              cohorts[key].totalCycleDays += diffDays;
+            }
+          }
+        });
+
+        const formatCohortLabel = (key: string) => {
+          if (cohortInterval === 'month') {
+            const [year, mon] = key.split('-');
+            const monthNames = ['', 'Январь', 'Февраль', 'Март', 'Апрель', 'Май', 'Июнь',
+              'Июль', 'Август', 'Сентябрь', 'Октябрь', 'Ноябрь', 'Декабрь'];
+            return `${monthNames[parseInt(mon)]} ${year}`;
+          }
+          if (cohortInterval === 'week') {
+            return `Неделя с ${key}`;
+          }
+          if (cohortInterval === 'quarter') {
+            const [year, q] = key.split('-');
+            return `${q.replace('Q', '')} кв. ${year}`;
+          }
+          return key;
+        };
+
+        return Object.entries(cohorts)
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([key, data]) => {
+            const avgCheck = data.wonDeals > 0 ? Math.round(data.totalRevenue / data.wonDeals) : 0;
+            const conversion = data.totalLeads > 0 ? ((data.wonDeals / data.totalLeads) * 100).toFixed(1) + '%' : '0.0%';
+            const avgCycle = data.wonDeals > 0 ? Math.round(data.totalCycleDays / data.wonDeals) : 0;
+            
+            return {
+              'Когорта': formatCohortLabel(key),
+              'Клиентов в когорте': data.totalLeads,
+              'Средний чек ($)': avgCheck,
+              'Конверсия в Won': conversion,
+              'Ср. цикл сделки (дн)': avgCycle
+            };
+          });
       }
 
       case 'RPT-008': { // Реестр платежей
@@ -760,7 +1055,7 @@ export default function ReportsClient({
       default:
         return [];
     }
-  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager]);
+  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager, draftStatusFilter, dynamicsInterval, cohortInterval, selectedInitiator, selectedApprover]);
 
   // Расчет динамических KPI показателей отчетов
   const reportStats = useMemo(() => {
@@ -859,6 +1154,84 @@ export default function ReportsClient({
         { label: 'Сумма договоров', value: `$${totalContract.toLocaleString()}`, subtext: `Всего сделок: ${activeReportData.length}`, icon: '📝' },
         { label: 'Поступило оплат', value: `$${totalPaid.toLocaleString()}`, subtext: `Оплачено: ${totalContract > 0 ? ((totalPaid / totalContract) * 100).toFixed(1) + '%' : '0%'}`, icon: '📥' },
         { label: 'Ожидается платежей', value: `$${totalPending.toLocaleString()}`, subtext: `Остаток: ${totalContract > 0 ? ((totalPending / totalContract) * 100).toFixed(1) + '%' : '0%'}`, icon: '⏳' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-005') {
+      const totalDrafts = activeReportData.length;
+      let approvedDrafts = 0;
+      let totalHours = 0;
+      let countWithTime = 0;
+
+      activeReportData.forEach(row => {
+        if (row['Статус'] === 'Одобрен') {
+          approvedDrafts++;
+          totalHours += Number(row['Время в работе (ч)']) || 0;
+          countWithTime++;
+        }
+      });
+
+      const avgHours = countWithTime > 0 ? (totalHours / countWithTime).toFixed(1) : '0.0';
+
+      return [
+        { label: 'Всего заявок', value: totalDrafts.toString(), subtext: 'В выбранном периоде', icon: '' },
+        { label: 'Одобрено договоров', value: approvedDrafts.toString(), subtext: `Доля: ${totalDrafts > 0 ? ((approvedDrafts / totalDrafts) * 100).toFixed(1) + '%' : '0.0%'}`, icon: '' },
+        { label: 'Среднее время согласования', value: `${avgHours} ч.`, subtext: 'Для одобренных договоров', icon: '' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-006') {
+      let totalLeads = 0;
+      let totalVisits = 0;
+      let totalApplications = 0;
+      let totalBookings = 0;
+      let totalContracts = 0;
+      let totalPayments = 0;
+
+      activeReportData.forEach(row => {
+        totalLeads += Number(row['Лиды']) || 0;
+        totalVisits += Number(row['Посещения']) || 0;
+        totalApplications += Number(row['Заявки']) || 0;
+        totalBookings += Number(row['Брони']) || 0;
+        totalContracts += Number(row['Договоры']) || 0;
+        totalPayments += Number(row['Поступило оплат ($)']) || 0;
+      });
+
+      return [
+        { label: 'Лиды / Встречи / Заявки', value: `${totalLeads} / ${totalVisits} / ${totalApplications}`, subtext: 'Привлечено / Проведено / Подано', icon: '' },
+        { label: 'Брони / Договоры', value: `${totalBookings} / ${totalContracts}`, subtext: `Конверсия в Won: ${totalLeads > 0 ? ((totalContracts / totalLeads) * 100).toFixed(1) + '%' : '0.0%'}`, icon: '' },
+        { label: 'Фактическая выручка', value: `$${totalPayments.toLocaleString()}`, subtext: 'Сумма поступивших оплат', icon: '' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-007') {
+      const filteredLeads = initialData.cohortAnalysis.filter((row: any) => {
+        if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+        if (startDate && row.leadCreatedAt && row.leadCreatedAt.substring(0, 10) < startDate) return false;
+        if (endDate && row.leadCreatedAt && row.leadCreatedAt.substring(0, 10) > endDate) return false;
+        if (selectedSource !== 'ALL' && row.source !== selectedSource) return false;
+        if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return false;
+        return true;
+      });
+
+      const totalLeads = filteredLeads.length;
+      let totalWon = 0;
+      let totalRevenue = 0;
+
+      filteredLeads.forEach((row: any) => {
+        const isWon = row.dealStatus === 'SUCCESS' || row.dealStatus === 'PAYMENT_CONFIRMED';
+        if (isWon) {
+          totalWon++;
+          totalRevenue += row.price || 0;
+        }
+      });
+
+      const conversion = totalLeads > 0 ? ((totalWon / totalLeads) * 100).toFixed(1) + '%' : '0.0%';
+
+      return [
+        { label: 'Всего клиентов', value: totalLeads.toString(), subtext: 'В когортах за период', icon: '' },
+        { label: 'Успешных сделок', value: totalWon.toString(), subtext: `Общий чек: $${totalRevenue.toLocaleString()}`, icon: '' },
+        { label: 'Итоговая конверсия', value: conversion, subtext: 'Средняя по всем когортам', icon: '' }
       ];
     }
 
@@ -1082,8 +1455,8 @@ export default function ReportsClient({
 
 
 
-          {/* Менеджер - RPT-001, RPT-003, RPT-004 */}
-          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-003' || activeReportId === 'RPT-004') && (
+          {/* Менеджер - RPT-001, RPT-003, RPT-004, RPT-005 */}
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-003' || activeReportId === 'RPT-004' || activeReportId === 'RPT-005') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Менеджер</label>
               <select
@@ -1101,8 +1474,8 @@ export default function ReportsClient({
             </div>
           )}
 
-          {/* Источник трафика - RPT-001 */}
-          {activeReportId === 'RPT-001' && (
+          {/* Источник трафика - RPT-001, RPT-007 */}
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-007') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Источник</label>
               <select
@@ -1120,8 +1493,8 @@ export default function ReportsClient({
             </div>
           )}
 
-          {/* Канал - RPT-001 */}
-          {activeReportId === 'RPT-001' && (
+          {/* Канал - RPT-001, RPT-007 */}
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-007') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Канал</label>
               <select
@@ -1262,6 +1635,84 @@ export default function ReportsClient({
                 </select>
               </div>
             </>
+          )}
+
+          {/* Фильтры статуса, инициатора, согласующего — только RPT-005 */}
+          {activeReportId === 'RPT-005' && (
+            <>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Статус заявки</label>
+                <select
+                  className={styles.filterInput}
+                  value={draftStatusFilter}
+                  onChange={e => setDraftStatusFilter(e.target.value)}
+                >
+                  <option value="ALL">Все статусы</option>
+                  <option value="IN_PROGRESS">В работе</option>
+                  <option value="APPROVED">Одобрен</option>
+                  <option value="REJECTED">Отклонен</option>
+                </select>
+              </div>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Инициатор</label>
+                <select
+                  className={styles.filterInput}
+                  value={selectedInitiator}
+                  onChange={e => setSelectedInitiator(e.target.value)}
+                >
+                  <option value="ALL">Все инициаторы</option>
+                  {initiators.map(init => (
+                    <option key={init} value={init}>{init}</option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Согласующий</label>
+                <select
+                  className={styles.filterInput}
+                  value={selectedApprover}
+                  onChange={e => setSelectedApprover(e.target.value)}
+                >
+                  <option value="ALL">Все согласующие</option>
+                  {approvers.map(appr => (
+                    <option key={appr} value={appr}>{appr}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Фильтр группировки по периоду — только RPT-006 */}
+          {activeReportId === 'RPT-006' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Группировка по периоду</label>
+              <select
+                className={styles.filterInput}
+                value={dynamicsInterval}
+                onChange={e => setDynamicsInterval(e.target.value)}
+              >
+                <option value="day">День</option>
+                <option value="week">Неделя</option>
+                <option value="month">Месяц</option>
+                <option value="quarter">Квартал</option>
+              </select>
+            </div>
+          )}
+
+          {/* Фильтр интервала когорты — только RPT-007 */}
+          {activeReportId === 'RPT-007' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Интервал когорты</label>
+              <select
+                className={styles.filterInput}
+                value={cohortInterval}
+                onChange={e => setCohortInterval(e.target.value)}
+              >
+                <option value="week">Неделя</option>
+                <option value="month">Месяц</option>
+                <option value="quarter">Квартал</option>
+              </select>
+            </div>
           )}
 
           <button className={styles.searchBtn} onClick={() => setReportGenerated(true)}>
