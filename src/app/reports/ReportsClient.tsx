@@ -230,6 +230,12 @@ export default function ReportsClient({
     setSelectedPaymentStatus('ALL');
     setSelectedOverdueBucket('ALL');
     setSelectedDebtManager('ALL');
+    // Для денежного потока расширяем период — показываем прогноз на год вперёд
+    if (id === 'RPT-010') {
+      const yearAhead = new Date();
+      yearAhead.setFullYear(yearAhead.getFullYear() + 1);
+      setEndDate(yearAhead.toISOString().split('T')[0]);
+    }
   };
 
   // Генерация тестовых (mock) данных для некритических отчетов
