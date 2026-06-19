@@ -895,26 +895,26 @@ export default function ReportsClient({
     }
 
     if (activeReportId === 'RPT-010') {
-      let totalScheduled = 0, totalPaid = 0, futureScheduled = 0;
-      const currentMonth = new Date().toISOString().substring(0, 7);
+      let pastScheduled = 0, totalPaid = 0, futureScheduled = 0;
       activeReportData.forEach(row => {
-        totalScheduled += Number(row['Прогноз / план ($)']) || 0;
-        const paid = Number(row['Фактически получено ($)']) || 0;
-        totalPaid += paid;
-        // Считаем будущие платежи (где факт = null)
-        if (row['Фактически получено ($)'] === null) {
-          futureScheduled += Number(row['Прогноз / план ($)']) || 0;
+        const scheduled = Number(row['Прогноз / план ($)']) || 0;
+        const paid = row['Фактически получено ($)'];
+        if (paid === null) {
+          // Будущий месяц — факта нет
+          futureScheduled += scheduled;
+        } else {
+          // Прошедший месяц — есть и план и факт
+          pastScheduled += scheduled;
+          totalPaid += Number(paid) || 0;
         }
       });
-      const execution = totalScheduled > 0
-        ? (((totalScheduled - futureScheduled) > 0
-            ? (totalPaid / (totalScheduled - futureScheduled)) * 100
-            : 0)).toFixed(1) + '%'
+      const execution = pastScheduled > 0
+        ? ((totalPaid / pastScheduled) * 100).toFixed(1) + '%'
         : '—';
       return [
-        { label: 'Всего по графику', value: `$${totalScheduled.toLocaleString()}`, subtext: `За выбранный период`, icon: '📅' },
-        { label: 'Фактически получено', value: `$${totalPaid.toLocaleString()}`, subtext: `Исполнение: ${execution}`, icon: '✅' },
-        { label: 'Ожидается (будущие)', value: `$${futureScheduled.toLocaleString()}`, subtext: 'Ещё не наступившие периоды', icon: '🔮' },
+        { label: 'Получено (прошлые периоды)', value: `$${totalPaid.toLocaleString()}`, subtext: `План: $${pastScheduled.toLocaleString()} | Исполнение: ${execution}`, icon: '✅' },
+        { label: 'Ожидается (будущие периоды)', value: `$${futureScheduled.toLocaleString()}`, subtext: 'По графику платежей', icon: '🔮' },
+        { label: 'Итого по графику', value: `$${(pastScheduled + futureScheduled).toLocaleString()}`, subtext: 'За весь выбранный период', icon: '📅' },
       ];
     }
 
