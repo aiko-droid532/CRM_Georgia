@@ -546,3 +546,244 @@ export async function getCashFlowReportData(organizationId: string) {
     return [];
   }
 }
+
+// RPT-005: Реестр заявок на договор (ContractDraft)
+export async function getContractDraftsReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        d.id as "dealId",
+        l.name as "clientName",
+        COALESCE(d."managerId", 'Не назначен') as "managerName",
+        p."nameRu" as "projectName",
+        b."projectId" as "projectId",
+        u.number as "unitNumber",
+        a_prep."createdAt" as "draftCreatedAt",
+        a_signed."createdAt" as "draftApprovedAt",
+        d.status::text as "currentDealStatus",
+        a_prep."authorId" as "initiator",
+        a_signed."authorId" as "approver"
+      FROM "AuditLog" a_prep
+      JOIN "Deal" d ON a_prep."entityId" = d.id
+      JOIN "Lead" l ON d."leadId" = l.id
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      LEFT JOIN "AuditLog" a_signed ON a_signed."entityId" = d.id 
+        AND a_signed."entityType" = 'Deal' 
+        AND a_signed."fieldName" = 'status' 
+        AND a_signed."newValue" = 'CONTRACT'
+        AND a_signed."createdAt" > a_prep."createdAt"
+      WHERE a_prep."entityType" = 'Deal'
+        AND a_prep."fieldName" = 'status'
+        AND a_prep."newValue" = 'CONTRACT_PREPARATION'
+        AND d."organizationId" = ${organizationId}
+    `;
+
+    return rawData.map(row => ({
+      dealId: row.dealId,
+      clientName: row.clientName,
+      managerName: row.managerName,
+      projectName: row.projectName,
+      projectId: row.projectId,
+      unitNumber: row.unitNumber,
+      draftCreatedAt: row.draftCreatedAt ? row.draftCreatedAt.toISOString() : null,
+      draftApprovedAt: row.draftApprovedAt ? row.draftApprovedAt.toISOString() : null,
+      currentDealStatus: row.currentDealStatus,
+      initiator: row.initiator,
+      approver: row.approver
+    }));
+  } catch (e) {
+    console.error('getContractDraftsReportData error:', e);
+    return [];
+  }
+}
+
+// RPT-006: Динамика продаж (Посещения/встречи отсутствуют в схеме, берем Лиды, Брони, Договоры, Суммы, Оплаты)
+export async function getSalesDynamicsReportData(organizationId: string) {
+  try {
+    // 1. Лиды
+    const leads: any[] = await prisma.$queryRaw`
+      SELECT 
+        l.id, 
+        l."createdAt" as "createdAt",
+        p.id as "projectId",
+        p."nameRu" as "projectName"
+      FROM "Lead" l
+      LEFT JOIN "Deal" d ON d."leadId" = l.id
+      LEFT JOIN "Unit" u ON d."unitId" = u.id
+      LEFT JOIN "Block" b ON u."blockId" = b.id
+      LEFT JOIN "Project" p ON b."projectId" = p.id
+      WHERE l."organizationId" = ${organizationId}
+    `;
+
+    // 2. Бронирования
+    const bookings: any[] = await prisma.$queryRaw`
+      SELECT 
+        bk.id, 
+        bk."createdAt" as "createdAt",
+        p.id as "projectId",
+        p."nameRu" as "projectName"
+      FROM "Booking" bk
+      JOIN "Unit" u ON bk."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE bk."organizationId" = ${organizationId}
+    `;
+
+    // 3. Договоры (сделки перешедшие в статус CONTRACT)
+    const contracts: any[] = await prisma.$queryRaw`
+      SELECT 
+        d.id as "dealId",
+        a."createdAt" as "signedAt",
+        p.id as "projectId",
+        p."nameRu" as "projectName",
+        COALESCE(u.price, 0)::double precision as "amount"
+      FROM "AuditLog" a
+      JOIN "Deal" d ON a."entityId" = d.id
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE a."entityType" = 'Deal'
+        AND a."fieldName" = 'status'
+        AND a."newValue" = 'CONTRACT'
+        AND d."organizationId" = ${organizationId}
+    `;
+
+    // 4. Оплаты (фактически проведенные транзакции)
+    const payments: any[] = await prisma.$queryRaw`
+      SELECT 
+        t.id as "transactionId",
+        t.amount as "paidAmount",
+        t.date as "paidAt",
+        b."projectId" as "projectId",
+        p."nameRu" as "projectName"
+      FROM "Transaction" t
+      JOIN "PaymentSchedule" ps ON t."paymentScheduleId" = ps.id
+      JOIN "Deal" d ON ps."dealId" = d.id
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE t."organizationId" = ${organizationId}
+    `;
+
+    // 5. Встречи (сделки перешедшие в статус CONSULTATION)
+    const visits: any[] = await prisma.$queryRaw`
+      SELECT 
+        d.id as "dealId",
+        a."createdAt" as "visitedAt",
+        p.id as "projectId",
+        p."nameRu" as "projectName"
+      FROM "AuditLog" a
+      JOIN "Deal" d ON a."entityId" = d.id
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE a."entityType" = 'Deal'
+        AND a."fieldName" = 'status'
+        AND a."newValue" = 'CONSULTATION'
+        AND d."organizationId" = ${organizationId}
+    `;
+
+    // 6. Заявки (сделки перешедшие в статус CONTRACT_PREPARATION)
+    const applications: any[] = await prisma.$queryRaw`
+      SELECT 
+        d.id as "dealId",
+        a."createdAt" as "appliedAt",
+        p.id as "projectId",
+        p."nameRu" as "projectName"
+      FROM "AuditLog" a
+      JOIN "Deal" d ON a."entityId" = d.id
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE a."entityType" = 'Deal'
+        AND a."fieldName" = 'status'
+        AND a."newValue" = 'CONTRACT_PREPARATION'
+        AND d."organizationId" = ${organizationId}
+    `;
+
+    return {
+      leads: leads.map(r => ({
+        id: r.id,
+        createdAt: r.createdAt ? r.createdAt.toISOString() : null,
+        projectId: r.projectId,
+        projectName: r.projectName
+      })),
+      bookings: bookings.map(r => ({
+        id: r.id,
+        createdAt: r.createdAt ? r.createdAt.toISOString() : null,
+        projectId: r.projectId,
+        projectName: r.projectName
+      })),
+      contracts: contracts.map(r => ({
+        dealId: r.dealId,
+        signedAt: r.signedAt ? r.signedAt.toISOString() : null,
+        projectId: r.projectId,
+        projectName: r.projectName,
+        amount: convertPrice(r.amount, r.projectName)
+      })),
+      payments: payments.map(r => ({
+        transactionId: r.transactionId,
+        paidAmount: convertPrice(r.paidAmount, r.projectName),
+        paidAt: r.paidAt ? r.paidAt.toISOString() : null,
+        projectId: r.projectId,
+        projectName: r.projectName
+      })),
+      visits: visits.map(r => ({
+        dealId: r.dealId,
+        visitedAt: r.visitedAt ? r.visitedAt.toISOString() : null,
+        projectId: r.projectId,
+        projectName: r.projectName
+      })),
+      applications: applications.map(r => ({
+        dealId: r.dealId,
+        appliedAt: r.appliedAt ? r.appliedAt.toISOString() : null,
+        projectId: r.projectId,
+        projectName: r.projectName
+      }))
+    };
+  } catch (e) {
+    console.error('getSalesDynamicsReportData error:', e);
+    return { leads: [], bookings: [], contracts: [], payments: [], visits: [], applications: [] };
+  }
+}
+
+// RPT-007: Когортный анализ клиентов (Группировка по дате создания лида, расчет конверсии и цикла)
+export async function getCohortAnalysisReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        l.id as "leadId",
+        COALESCE(l.source, 'Не указан') as "source",
+        l."createdAt" as "leadCreatedAt",
+        d.id as "dealId",
+        d.status::text as "dealStatus",
+        d."updatedAt" as "dealUpdatedAt",
+        COALESCE(u.price, 0)::double precision as "price",
+        p."nameRu" as "projectName",
+        p.id as "projectId"
+      FROM "Lead" l
+      LEFT JOIN "Deal" d ON d."leadId" = l.id
+      LEFT JOIN "Unit" u ON d."unitId" = u.id
+      LEFT JOIN "Block" b ON u."blockId" = b.id
+      LEFT JOIN "Project" p ON b."projectId" = p.id
+      WHERE l."organizationId" = ${organizationId}
+    `;
+
+    return rawData.map(row => ({
+      leadId: row.leadId,
+      source: row.source,
+      leadCreatedAt: row.leadCreatedAt ? row.leadCreatedAt.toISOString() : null,
+      dealId: row.dealId,
+      dealStatus: row.dealStatus,
+      dealUpdatedAt: row.dealUpdatedAt ? row.dealUpdatedAt.toISOString() : null,
+      price: convertPrice(row.price, row.projectName),
+      projectId: row.projectId,
+      projectName: row.projectName
+    }));
+  } catch (e) {
+    console.error('getCohortAnalysisReportData error:', e);
+    return [];
+  }
+}
