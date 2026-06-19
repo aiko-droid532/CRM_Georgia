@@ -488,3 +488,61 @@ export async function getUnitTypesList(organizationId: string) {
     return [];
   }
 }
+
+// RPT-010: Сводный денежный поток (прогноз по графику платежей vs факт по транзакциям, сгруппировано по месяцам)
+export async function getCashFlowReportData(organizationId: string) {
+  try {
+    // Плановые платежи по месяцам
+    const scheduled: any[] = await prisma.$queryRaw`
+      SELECT
+        TO_CHAR(ps."dueDate", 'YYYY-MM') as "month",
+        b."projectId" as "projectId",
+        SUM(ps.amount)::double precision as "scheduledAmount",
+        COUNT(*)::int as "scheduledCount"
+      FROM "PaymentSchedule" ps
+      JOIN "Deal" d ON ps."dealId" = d.id
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      WHERE ps."organizationId" = ${organizationId}
+      GROUP BY TO_CHAR(ps."dueDate", 'YYYY-MM'), b."projectId"
+      ORDER BY "month" ASC
+    `;
+
+    // Фактические оплаты по месяцам
+    const actual: any[] = await prisma.$queryRaw`
+      SELECT
+        TO_CHAR(t.date, 'YYYY-MM') as "month",
+        b."projectId" as "projectId",
+        SUM(t.amount)::double precision as "paidAmount",
+        COUNT(*)::int as "paidCount"
+      FROM "Transaction" t
+      JOIN "PaymentSchedule" ps ON t."paymentScheduleId" = ps.id
+      JOIN "Deal" d ON ps."dealId" = d.id
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      WHERE t."organizationId" = ${organizationId}
+      GROUP BY TO_CHAR(t.date, 'YYYY-MM'), b."projectId"
+      ORDER BY "month" ASC
+    `;
+
+    // Объединяем по ключу month+projectId
+    const map: Record<string, { month: string; projectId: string; scheduledAmount: number; paidAmount: number }> = {};
+
+    scheduled.forEach(row => {
+      const key = `${row.month}__${row.projectId}`;
+      if (!map[key]) map[key] = { month: row.month, projectId: row.projectId, scheduledAmount: 0, paidAmount: 0 };
+      map[key].scheduledAmount += row.scheduledAmount;
+    });
+
+    actual.forEach(row => {
+      const key = `${row.month}__${row.projectId}`;
+      if (!map[key]) map[key] = { month: row.month, projectId: row.projectId, scheduledAmount: 0, paidAmount: 0 };
+      map[key].paidAmount += row.paidAmount;
+    });
+
+    return Object.values(map).sort((a, b) => a.month.localeCompare(b.month));
+  } catch (e) {
+    console.error('getCashFlowReportData error:', e);
+    return [];
+  }
+}

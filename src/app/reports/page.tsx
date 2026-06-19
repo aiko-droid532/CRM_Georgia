@@ -8,6 +8,7 @@ import {
   getSalesCashFlowData,
   getPaymentRegistryData,
   getDebtorsRegistryData,
+  getCashFlowReportData,
   getManagerKpiData,
   getMarketingChannelsData,
   getProjectsList,
@@ -26,9 +27,9 @@ export default async function ReportsPage({
 }) {
   const cookieStore = cookies();
   const token = searchParams.token || cookieStore.get('auth_token')?.value;
-  
+
   let organizationId = 'default';
-  
+
   if (token) {
     try {
       const { payload } = await verifyToken(token);
@@ -48,6 +49,7 @@ export default async function ReportsPage({
   const cashFlow = await getSalesCashFlowData(organizationId);
   const paymentRegistry = await getPaymentRegistryData(organizationId);
   const debtors = await getDebtorsRegistryData(organizationId);
+  const cashFlowReport = await getCashFlowReportData(organizationId);
   const managerKpi = await getManagerKpiData(organizationId);
   const marketingChannels = await getMarketingChannelsData(organizationId);
 
@@ -76,6 +78,7 @@ export default async function ReportsPage({
         cashFlow,
         paymentRegistry,
         debtors,
+        cashFlowReport,
         managerKpi,
         marketingChannels
       }}
