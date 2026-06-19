@@ -9,6 +9,8 @@ import {
   getPaymentRegistryData,
   getDebtorsRegistryData,
   getCashFlowReportData,
+  getDiscountReportData,
+  getMortgageReportData,
   getManagerKpiData,
   getMarketingChannelsData,
   getProjectsList,
@@ -50,6 +52,8 @@ export default async function ReportsPage({
   const paymentRegistry = await getPaymentRegistryData(organizationId);
   const debtors = await getDebtorsRegistryData(organizationId);
   const cashFlowReport = await getCashFlowReportData(organizationId);
+  const discountReport = await getDiscountReportData(organizationId);
+  const mortgageReport = await getMortgageReportData(organizationId);
   const managerKpi = await getManagerKpiData(organizationId);
   const marketingChannels = await getMarketingChannelsData(organizationId);
 
@@ -79,6 +83,8 @@ export default async function ReportsPage({
         paymentRegistry,
         debtors,
         cashFlowReport,
+        discountReport,
+        mortgageReport,
         managerKpi,
         marketingChannels
       }}

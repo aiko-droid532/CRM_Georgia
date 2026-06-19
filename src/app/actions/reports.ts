@@ -787,3 +787,96 @@ export async function getCohortAnalysisReportData(organizationId: string) {
     return [];
   }
 }
+
+// RPT-011: Отчёт по индивидуальным скидкам (сделки с discount > 0)
+export async function getDiscountReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT
+        d.id as "dealId",
+        l.name as "clientName",
+        u.number as "unitNumber",
+        u.price as "basePrice",
+        COALESCE(d."discount", 0) as "discountPct",
+        COALESCE(d."managerId", 'Не назначен') as "managerId",
+        b."projectId" as "projectId",
+        d."createdAt" as "createdAt"
+      FROM "Deal" d
+      JOIN "Lead" l ON d."leadId" = l.id
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      WHERE d."organizationId" = ${organizationId}
+        AND COALESCE(d."discount", 0) > 0
+      ORDER BY d."discount" DESC
+    `;
+
+    return rawData.map(row => {
+      const discountAmount = parseFloat(((row.basePrice * row.discountPct) / 100).toFixed(2));
+      const finalPrice = row.basePrice - discountAmount;
+      return {
+        dealId: row.dealId,
+        clientName: row.clientName,
+        unitNumber: row.unitNumber,
+        basePrice: row.basePrice,
+        discountPct: row.discountPct,
+        discountAmount,
+        finalPrice,
+        managerId: row.managerId,
+        projectId: row.projectId,
+        createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null
+      };
+    });
+  } catch (e) {
+    console.error('getDiscountReportData error:', e);
+    return [];
+  }
+}
+
+// RPT-012: Отчёт по ипотечным сделкам (сделки с paymentType = Mortgage)
+export async function getMortgageReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT
+        d.id as "dealId",
+        l.name as "clientName",
+        l.phone as "clientPhone",
+        u.number as "unitNumber",
+        u.price as "unitPrice",
+        COALESCE(d."mortgageBank", 'Не указан') as "mortgageBank",
+        COALESCE(d."mortgageStatus", 'NONE') as "mortgageStatus",
+        COALESCE(d."mortgageComment", '') as "mortgageComment",
+        COALESCE(d."totalAmount", 0) as "totalAmount",
+        COALESCE(d."downPayment", 0) as "downPayment",
+        COALESCE(d."managerId", 'Не назначен') as "managerId",
+        b."projectId" as "projectId",
+        d."createdAt" as "createdAt"
+      FROM "Deal" d
+      JOIN "Lead" l ON d."leadId" = l.id
+      JOIN "Unit" u ON d."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      WHERE d."organizationId" = ${organizationId}
+        AND d."paymentType" = 'Mortgage'
+      ORDER BY d."createdAt" DESC
+    `;
+
+    return rawData.map(row => ({
+      dealId: row.dealId,
+      clientName: row.clientName,
+      clientPhone: row.clientPhone,
+      unitNumber: row.unitNumber,
+      unitPrice: row.unitPrice,
+      mortgageBank: row.mortgageBank,
+      mortgageStatus: row.mortgageStatus,
+      mortgageComment: row.mortgageComment,
+      totalAmount: row.totalAmount,
+      downPayment: row.downPayment,
+      loanAmount: row.totalAmount - row.downPayment,
+      managerId: row.managerId,
+      projectId: row.projectId,
+      createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null
+    }));
+  } catch (e) {
+    console.error('getMortgageReportData error:', e);
+    return [];
+  }
+}
