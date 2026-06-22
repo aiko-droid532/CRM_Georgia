@@ -1168,6 +1168,123 @@ export async function getAreaDiscrepancyReportData(organizationId: string) {
   }
 }
 
+// RPT-021: Реестр VIP-клиентов
+export async function getVipClientsReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        l.id as "clientId",
+        l.name as "clientName",
+        l.phone as "clientPhone",
+        l.email as "clientEmail",
+        COALESCE(l."managerId", 'Не назначен') as "managerId",
+        l."createdAt" as "firstContact",
+        l."updatedAt" as "lastInteraction",
+        (
+          SELECT COUNT(*)::int FROM "Deal" d
+          WHERE d."leadId" = l.id AND d.status NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')
+        ) as "activeDealsCount",
+        (
+          SELECT COALESCE(SUM(COALESCE(d."totalAmount", u.price)), 0)::double precision FROM "Deal" d
+          LEFT JOIN "Unit" u ON d."unitId" = u.id
+          WHERE d."leadId" = l.id AND d.status NOT IN ('FAILED', 'CANCELLED')
+        ) as "totalDealsAmount",
+        (
+          SELECT p."nameRu" FROM "Deal" d
+          JOIN "Unit" u ON d."unitId" = u.id
+          JOIN "Block" b ON u."blockId" = b.id
+          JOIN "Project" p ON b."projectId" = p.id
+          WHERE d."leadId" = l.id
+          ORDER BY d."createdAt" DESC LIMIT 1
+        ) as "projectName",
+        (
+          SELECT p.id FROM "Deal" d
+          JOIN "Unit" u ON d."unitId" = u.id
+          JOIN "Block" b ON u."blockId" = b.id
+          JOIN "Project" p ON b."projectId" = p.id
+          WHERE d."leadId" = l.id
+          ORDER BY d."createdAt" DESC LIMIT 1
+        ) as "projectId"
+      FROM "Lead" l
+      WHERE l."organizationId" = ${organizationId} AND l."isVip" = true
+      ORDER BY l.name ASC
+    `;
+    return rawData.map(row => ({
+      clientId: row.clientId,
+      clientName: row.clientName,
+      clientPhone: row.clientPhone,
+      clientEmail: row.clientEmail,
+      managerId: row.managerId,
+      firstContact: row.firstContact ? row.firstContact.toISOString().split('T')[0] : null,
+      lastInteraction: row.lastInteraction ? row.lastInteraction.toISOString().split('T')[0] : null,
+      activeDealsCount: row.activeDealsCount,
+      totalDealsAmount: row.totalDealsAmount,
+      projectName: row.projectName || 'Без проекта',
+      projectId: row.projectId || 'NONE'
+    }));
+  } catch (e) {
+    console.error('getVipClientsReportData error:', e);
+    return [];
+  }
+}
+
+// RPT-022: Анкетные данные по клиентам (справочник реквизитов)
+export async function getClientDossierReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        l.id as "clientId",
+        l.name as "clientName",
+        l.phone as "clientPhone",
+        l.email as "clientEmail",
+        COALESCE(l.iin, l.passport, l."identificationNumber", 'Не указан') as "clientIdentity",
+        l.source as "source",
+        l.status::text as "leadStatus",
+        l."createdAt" as "firstTouch",
+        (
+          SELECT p."nameRu" FROM "Deal" d
+          JOIN "Unit" u ON d."unitId" = u.id
+          JOIN "Block" b ON u."blockId" = b.id
+          JOIN "Project" p ON b."projectId" = p.id
+          WHERE d."leadId" = l.id
+          ORDER BY d."createdAt" DESC LIMIT 1
+        ) as "projectName",
+        (
+          SELECT p.id FROM "Deal" d
+          JOIN "Unit" u ON d."unitId" = u.id
+          JOIN "Block" b ON u."blockId" = b.id
+          JOIN "Project" p ON b."projectId" = p.id
+          WHERE d."leadId" = l.id
+          ORDER BY d."createdAt" DESC LIMIT 1
+        ) as "projectId",
+        (
+          SELECT d.status::text FROM "Deal" d
+          WHERE d."leadId" = l.id
+          ORDER BY d."createdAt" DESC LIMIT 1
+        ) as "dealStatus"
+      FROM "Lead" l
+      WHERE l."organizationId" = ${organizationId}
+      ORDER BY l."createdAt" DESC
+    `;
+    return rawData.map(row => ({
+      clientId: row.clientId,
+      clientName: row.clientName,
+      clientPhone: row.clientPhone,
+      clientEmail: row.clientEmail,
+      clientIdentity: row.clientIdentity,
+      source: row.source || 'Не указан',
+      leadStatus: row.leadStatus,
+      firstTouch: row.firstTouch ? row.firstTouch.toISOString().split('T')[0] : null,
+      projectName: row.projectName || 'Без проекта',
+      projectId: row.projectId || 'NONE',
+      dealStatus: row.dealStatus || 'Нет сделки'
+    }));
+  } catch (e) {
+    console.error('getClientDossierReportData error:', e);
+    return [];
+  }
+}
+
 // RPT-013: Отчёт по выписанным e-invoice
 export async function getTaxInvoiceReportData(organizationId: string) {
   try {
