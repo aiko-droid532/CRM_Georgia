@@ -45,7 +45,8 @@ const REPORT_CATALOG = [
 const IMPLEMENTED_REPORTS = [
   'RPT-001', 'RPT-002', 'RPT-003', 'RPT-004', 'RPT-005', 'RPT-006', 'RPT-007',
   'RPT-008', 'RPT-009', 'RPT-010', 'RPT-011', 'RPT-012', 'RPT-015', 'RPT-016',
-  'RPT-017', 'RPT-018', 'RPT-019', 'RPT-020', 'RPT-023', 'RPT-024'
+  'RPT-017', 'RPT-018', 'RPT-019', 'RPT-020', 'RPT-021', 'RPT-022', 'RPT-023', 'RPT-024'
+
 ];
 
 const CATEGORIES = [
@@ -58,6 +59,7 @@ const CATEGORIES = [
 
 interface ReportsClientProps {
   organizationId: string;
+  userRole?: string;
   projects: { id: string; name: string }[];
   managers: string[];
   blocks: { id: string; number: string; projectId: string }[];
@@ -82,12 +84,16 @@ interface ReportsClientProps {
     mortgageReport: any[];
     taxInvoiceReport: any[];
     escrowReport: any[];
+
     availableUnits: any[];
     soldUnits: any[];
     projectExposure: any[];
     freeUnitsSearch: any[];
     priceHistory: any[];
     areaDiscrepancy: any[];
+    vipClients: any[];
+    clientDossier: any[];
+
   };
   usdRate?: number;
 }
@@ -129,6 +135,51 @@ const PAYMENT_TYPE_TRANSLATIONS: Record<string, string> = {
   'None': 'Не указана',
   'NONE': 'Не указана'
 };
+
+const LEAD_STATUS_TRANSLATIONS: Record<string, string> = {
+  'NEW': 'Новый',
+  'IN_QUALIFICATION': 'Квалификация',
+  'QUALIFIED': 'Квалифицирован',
+  'IN_PROGRESS': 'В работе',
+  'CONVERTED': 'Конвертирован',
+  'LOST': 'Потерян'
+};
+
+function maskPhone(phone: string | null | undefined, role?: string): string {
+  if (!phone) return '—';
+  const roleLower = (role || '').toLowerCase();
+  if (['admin', 'director', 'partner'].includes(roleLower)) {
+    return phone;
+  }
+  const cleaned = phone.trim();
+  if (cleaned.length <= 7) return '***';
+  return cleaned.substring(0, 4) + '***' + cleaned.substring(cleaned.length - 3);
+}
+
+function maskEmail(email: string | null | undefined, role?: string): string {
+  if (!email) return '—';
+  const roleLower = (role || '').toLowerCase();
+  if (['admin', 'director', 'partner'].includes(roleLower)) {
+    return email;
+  }
+  const parts = email.split('@');
+  if (parts.length !== 2) return '***';
+  const name = parts[0];
+  const domain = parts[1];
+  if (name.length <= 3) return '***@' + domain;
+  return name.substring(0, 3) + '***@' + domain;
+}
+
+function maskIdNumber(identity: string | null | undefined, role?: string): string {
+  if (!identity || identity === 'Не указан' || identity.trim() === '') return 'Не указан';
+  const roleLower = (role || '').toLowerCase();
+  if (['admin', 'director', 'partner'].includes(roleLower)) {
+    return identity;
+  }
+  const cleaned = identity.trim();
+  if (cleaned.length <= 6) return '***';
+  return cleaned.substring(0, 3) + '***' + cleaned.substring(cleaned.length - 3);
+}
 
 const STAGE_ORDER = [
   'NEW_LEAD',
@@ -197,6 +248,7 @@ function getChannelBySource(source: string): string {
 
 export default function ReportsClient({
   organizationId,
+  userRole = 'manager',
   projects,
   managers,
   blocks,
@@ -255,6 +307,8 @@ export default function ReportsClient({
   const [filterView, setFilterView] = useState('ALL');
   const [filterUnitNumber, setFilterUnitNumber] = useState('');
   const [filterInitiator, setFilterInitiator] = useState('ALL');
+  const [dealStatusFilter, setDealStatusFilter] = useState('ALL');
+
 
   // Стейт для «Сформировать» — таблица и KPI-карточки показываются после нажатия
   const [reportGenerated, setReportGenerated] = useState(false);
@@ -293,6 +347,8 @@ export default function ReportsClient({
     setFilterView('ALL');
     setFilterUnitNumber('');
     setFilterInitiator('ALL');
+    setDealStatusFilter('ALL');
+
     // Для денежного потока расширяем период — показываем прогноз на год вперёд
     if (id === 'RPT-010') {
       const yearAhead = new Date();
@@ -325,6 +381,7 @@ export default function ReportsClient({
           { 'Когорта': '2026-03 (Март)', 'Клиентов в когорте': 80, 'Средний чек ($)': 125000, 'Конверсия в Won': '10.0%', 'Ср. цикл сделки (дн)': 12 }
         ];
       case 'RPT-011':
+
         return [
           { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Квартира': '№303', 'Базовая цена ($)': 935416, 'Индивидуальная скидка (%)': '4.0%', 'Сумма скидки ($)': 37416, 'Статус согласования': 'Одобрено РОП' },
           { 'Сделка': 'DEAL-9102', 'Клиент': 'Аслан Ислямов', 'Квартира': '№204', 'Базовая цена ($)': 420000, 'Индивидуальная скидка (%)': '6.5%', 'Сумма скидки ($)': 27300, 'Статус согласования': 'Одобрено ТОП' }
@@ -711,14 +768,14 @@ export default function ReportsClient({
           if (selectedManager !== 'ALL' && row.managerName !== selectedManager) return false;
           if (startDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) < startDate) return false;
           if (endDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) > endDate) return false;
-
+          
           let status = 'IN_PROGRESS';
           if (row.draftApprovedAt) {
             status = 'APPROVED';
           } else if (row.currentDealStatus === 'FAILED' || row.currentDealStatus === 'CANCELLED') {
             status = 'REJECTED';
           }
-
+          
           if (draftStatusFilter !== 'ALL' && status !== draftStatusFilter) return false;
           return true;
         });
@@ -755,7 +812,7 @@ export default function ReportsClient({
           if (!dateStr) return 'unknown';
           const d = new Date(dateStr);
           if (isNaN(d.getTime())) return 'unknown';
-
+          
           if (dynamicsInterval === 'day') {
             return dateStr.substring(0, 10);
           }
@@ -781,7 +838,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && l.projectId !== selectedProject) return;
           if (startDate && l.createdAt && l.createdAt.substring(0, 10) < startDate) return;
           if (endDate && l.createdAt && l.createdAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(l.createdAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -794,7 +851,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && v.projectId !== selectedProject) return;
           if (startDate && v.visitedAt && v.visitedAt.substring(0, 10) < startDate) return;
           if (endDate && v.visitedAt && v.visitedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(v.visitedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -807,7 +864,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && a.projectId !== selectedProject) return;
           if (startDate && a.appliedAt && a.appliedAt.substring(0, 10) < startDate) return;
           if (endDate && a.appliedAt && a.appliedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(a.appliedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -820,7 +877,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && b.projectId !== selectedProject) return;
           if (startDate && b.createdAt && b.createdAt.substring(0, 10) < startDate) return;
           if (endDate && b.createdAt && b.createdAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(b.createdAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -833,7 +890,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && c.projectId !== selectedProject) return;
           if (startDate && c.signedAt && c.signedAt.substring(0, 10) < startDate) return;
           if (endDate && c.signedAt && c.signedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(c.signedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -847,7 +904,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && p.projectId !== selectedProject) return;
           if (startDate && p.paidAt && p.paidAt.substring(0, 10) < startDate) return;
           if (endDate && p.paidAt && p.paidAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(p.paidAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -892,7 +949,7 @@ export default function ReportsClient({
           if (!dateStr) return 'unknown';
           const d = new Date(dateStr);
           if (isNaN(d.getTime())) return 'unknown';
-
+          
           if (cohortInterval === 'week') {
             const day = d.getDay();
             const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -917,19 +974,19 @@ export default function ReportsClient({
           if (endDate && row.leadCreatedAt && row.leadCreatedAt.substring(0, 10) > endDate) return;
           if (selectedSource !== 'ALL' && row.source !== selectedSource) return;
           if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return;
-
+          
           const key = getCohortKey(row.leadCreatedAt);
           if (key === 'unknown') return;
           if (!cohorts[key]) {
             cohorts[key] = { totalLeads: 0, wonDeals: 0, totalRevenue: 0, totalCycleDays: 0 };
           }
           cohorts[key].totalLeads += 1;
-
+          
           const isWon = row.dealStatus === 'SUCCESS' || row.dealStatus === 'PAYMENT_CONFIRMED';
           if (isWon) {
             cohorts[key].wonDeals += 1;
             cohorts[key].totalRevenue += row.price || 0;
-
+            
             if (row.leadCreatedAt && row.dealUpdatedAt) {
               const leadDate = new Date(row.leadCreatedAt);
               const dealDate = new Date(row.dealUpdatedAt);
@@ -962,7 +1019,7 @@ export default function ReportsClient({
             const avgCheck = data.wonDeals > 0 ? Math.round(data.totalRevenue / data.wonDeals) : 0;
             const conversion = data.totalLeads > 0 ? ((data.wonDeals / data.totalLeads) * 100).toFixed(1) + '%' : '0.0%';
             const avgCycle = data.wonDeals > 0 ? Math.round(data.totalCycleDays / data.wonDeals) : 0;
-
+            
             return {
               'Когорта': formatCohortLabel(key),
               'Клиентов в когорте': data.totalLeads,
@@ -1317,6 +1374,7 @@ export default function ReportsClient({
           const diff = parseFloat((actual - projected).toFixed(2));
           const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
 
+
           let compensationStatus = 'Расхождений нет';
           if (diff > 0) {
             const sqPrice = row.price / (projected || 1);
@@ -1338,6 +1396,50 @@ export default function ReportsClient({
             'Статус взаиморасчетов': compensationStatus
           };
         });
+      }
+
+      case 'RPT-021': { // Реестр VIP-клиентов
+        const filtered = (initialData.vipClients || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+          if (startDate && row.firstContact && row.firstContact < startDate) return false;
+          if (endDate && row.firstContact && row.firstContact > endDate) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'ФИО Клиента': row.clientName,
+          'Телефон': maskPhone(row.clientPhone, userRole),
+          'Email': maskEmail(row.clientEmail, userRole),
+          'Активных сделок': row.activeDealsCount,
+          'Сумма сделок ($)': Math.round(row.totalDealsAmount),
+          'ЖК': row.projectName,
+          'Первый контакт': row.firstContact,
+          'Последняя активность': row.lastInteraction
+        }));
+      }
+
+      case 'RPT-022': { // Анкетные данные по клиентам
+        const filtered = (initialData.clientDossier || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (dealStatusFilter !== 'ALL' && row.dealStatus !== dealStatusFilter) return false;
+          if (selectedSource !== 'ALL' && row.source !== selectedSource) return false;
+          if (startDate && row.firstTouch && row.firstTouch < startDate) return false;
+          if (endDate && row.firstTouch && row.firstTouch > endDate) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'ФИО Клиента': row.clientName,
+          'Телефон': maskPhone(row.clientPhone, userRole),
+          'Email': maskEmail(row.clientEmail, userRole),
+          'Реквизиты/Документ': maskIdNumber(row.clientIdentity, userRole),
+          'Источник': row.source,
+          'Статус лида': LEAD_STATUS_TRANSLATIONS[row.leadStatus] || row.leadStatus,
+          'Первое касание': row.firstTouch,
+          'ЖК': row.projectName,
+          'Статус сделки': STAGE_TRANSLATIONS[row.dealStatus] || row.dealStatus
+        }));
       }
 
       default:
@@ -1754,9 +1856,54 @@ export default function ReportsClient({
         ? ((totalReleased / totalDeposited) * 100).toFixed(1) + '%'
         : '0%';
       return [
-        { label: 'Эскроу счетов', value: activeReportData.length.toString(), subtext: `🔒 Активных: ${activeCount} | ✅ Раскрытых: ${releasedCount}`, icon: '🏦' },
+        { label: 'Эскроу счетов', value: activeReportData.length.toString(), subtext: `Активных: ${activeCount} | Раскрытых: ${releasedCount}`, icon: '🏦' },
         { label: 'Депонировано', value: `$${totalDeposited.toLocaleString()}`, subtext: 'Общая сумма на счетах', icon: '💰' },
         { label: 'Раскрыто', value: `$${totalReleased.toLocaleString()}`, subtext: `${releasePct} от общей суммы`, icon: '🔓' },
+      ];
+    }
+
+    if (activeReportId === 'RPT-021') {
+      let totalVip = activeReportData.length;
+      let totalSum = 0;
+      activeReportData.forEach(row => {
+        totalSum += Number(row['Сумма сделок ($)']) || 0;
+      });
+      const avgSum = totalVip > 0 ? Math.round(totalSum / totalVip) : 0;
+
+      return [
+        { label: 'VIP-клиентов', value: totalVip.toString(), subtext: 'В выбранном периоде', icon: '👑' },
+        { label: 'Сумма сделок VIP', value: `$${totalSum.toLocaleString()}`, subtext: 'Общий объем бюджетов', icon: '💰' },
+        { label: 'Средний объем сделок', value: `$${avgSum.toLocaleString()}`, subtext: 'На одного VIP-клиента', icon: '📊' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-022') {
+      let totalDossiers = activeReportData.length;
+      let countWithPhone = 0;
+      let sourceCounts: Record<string, number> = {};
+
+      activeReportData.forEach(row => {
+        const phone = row['Телефон'] || '';
+        if (phone && phone !== '—') {
+          countWithPhone++;
+        }
+        const src = row['Источник'] || 'Не указан';
+        sourceCounts[src] = (sourceCounts[src] || 0) + 1;
+      });
+
+      let topSource = '—';
+      let maxCount = -1;
+      Object.entries(sourceCounts).forEach(([src, count]) => {
+        if (count > maxCount) {
+          maxCount = count;
+          topSource = src;
+        }
+      });
+
+      return [
+        { label: 'Всего анкет', value: totalDossiers.toString(), subtext: 'Для обзвонов и рассылок', icon: '📋' },
+        { label: 'Контактов с телефонами', value: countWithPhone.toString(), subtext: `Доля: ${totalDossiers > 0 ? ((countWithPhone / totalDossiers) * 100).toFixed(0) + '%' : '0%'}`, icon: '📞' },
+        { label: 'Основной источник', value: topSource, subtext: maxCount > 0 ? `Лидов: ${maxCount}` : 'Нет данных', icon: '🔍' }
       ];
     }
 
@@ -1924,8 +2071,8 @@ export default function ReportsClient({
 
 
 
-          {/* Менеджер - RPT-001, RPT-003, RPT-004, RPT-005 */}
-          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-003' || activeReportId === 'RPT-004' || activeReportId === 'RPT-005') && (
+          {/* Менеджер - RPT-001, RPT-003, RPT-004, RPT-005, RPT-021 */}
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-003' || activeReportId === 'RPT-004' || activeReportId === 'RPT-005' || activeReportId === 'RPT-021') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Менеджер</label>
               <select
@@ -1943,8 +2090,8 @@ export default function ReportsClient({
             </div>
           )}
 
-          {/* Источник трафика - RPT-001, RPT-007 */}
-          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-007') && (
+          {/* Источник трафика - RPT-001, RPT-007, RPT-022 */}
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-007' || activeReportId === 'RPT-022') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Источник</label>
               <select
@@ -2180,6 +2327,26 @@ export default function ReportsClient({
                 <option value="week">Неделя</option>
                 <option value="month">Месяц</option>
                 <option value="quarter">Квартал</option>
+              </select>
+            </div>
+          )}
+
+          {/* Фильтр статуса сделки — только RPT-022 */}
+          {activeReportId === 'RPT-022' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Статус сделки</label>
+              <select
+                className={styles.filterInput}
+                value={dealStatusFilter}
+                onChange={e => setDealStatusFilter(e.target.value)}
+              >
+                <option value="ALL">Все статусы</option>
+                {STAGE_ORDER.map(stage => (
+                  <option key={stage} value={stage}>
+                    {STAGE_TRANSLATIONS[stage] || stage}
+                  </option>
+                ))}
+                <option value="Нет сделки">Нет сделки</option>
               </select>
             </div>
           )}
