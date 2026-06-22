@@ -21,8 +21,8 @@ const REPORT_CATALOG = [
   { id: 'RPT-010', name: 'Сводный денежный поток', description: 'Прогноз поступлений по графику платежей и сопоставление с финансовым планом.', category: 'finance', isCritical: true },
   { id: 'RPT-011', name: 'Отчет по индивидуальным скидкам', description: 'Все скидки выше порогов (от 3%) с указанием инициатора, согласующего и маржинальности.', category: 'finance', isCritical: true },
   { id: 'RPT-012', name: 'Отчет по ипотечным сделкам', description: 'Сделки в рассрочку/ипотеку с разбивкой по банкам (TBC, BoG) и конверсией выдачи.', category: 'finance', isCritical: true },
-  { id: 'RPT-013', name: 'Отчет по выписанным e-invoice', description: 'Налоговые инвойсы, отправленные в систему RS.ge, и их текущие статусы.', category: 'finance', isCritical: false },
-  { id: 'RPT-014', name: 'Отчет по эскроу', description: 'Сделки со счетами эскроу. Депонированные и раскрытые суммы по этапам.', category: 'finance', isCritical: false },
+  { id: 'RPT-013', name: 'Отчет по выписанным e-invoice', description: 'Налоговые инвойсы, отправленные в систему RS.ge, и их текущие статусы.', category: 'finance', isCritical: true },
+  { id: 'RPT-014', name: 'Отчет по эскроу', description: 'Сделки со счетами эскроу. Депонированные и раскрытые суммы по этапам.', category: 'finance', isCritical: true },
 
   // 3. Объекты и остатки
   { id: 'RPT-015', name: 'Остатки помещений (Свободные)', description: 'Свободные квартиры по ЖК с детализацией по площадям, типам и ценам. Реестр Available.', category: 'units', isCritical: false },
@@ -44,7 +44,8 @@ const REPORT_CATALOG = [
 
 const IMPLEMENTED_REPORTS = [
   'RPT-001', 'RPT-002', 'RPT-003', 'RPT-004', 'RPT-005', 'RPT-006', 'RPT-007',
-  'RPT-008', 'RPT-009', 'RPT-010', 'RPT-011', 'RPT-012', 'RPT-023', 'RPT-024'
+  'RPT-008', 'RPT-009', 'RPT-010', 'RPT-011', 'RPT-012', 'RPT-015', 'RPT-016',
+  'RPT-017', 'RPT-018', 'RPT-019', 'RPT-020', 'RPT-023', 'RPT-024'
 ];
 
 const CATEGORIES = [
@@ -79,6 +80,14 @@ interface ReportsClientProps {
     cohortAnalysis: any[];
     discountReport: any[];
     mortgageReport: any[];
+    taxInvoiceReport: any[];
+    escrowReport: any[];
+    availableUnits: any[];
+    soldUnits: any[];
+    projectExposure: any[];
+    freeUnitsSearch: any[];
+    priceHistory: any[];
+    areaDiscrepancy: any[];
   };
   usdRate?: number;
 }
@@ -237,6 +246,16 @@ export default function ReportsClient({
   // Фильтры для RPT-007
   const [cohortInterval, setCohortInterval] = useState('month'); // week | month | quarter
 
+  // Дополнительные фильтры для RPT-015 - RPT-020
+  const [minArea, setMinArea] = useState('');
+  const [maxArea, setMaxArea] = useState('');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [filterFloor, setFilterFloor] = useState('');
+  const [filterView, setFilterView] = useState('ALL');
+  const [filterUnitNumber, setFilterUnitNumber] = useState('');
+  const [filterInitiator, setFilterInitiator] = useState('ALL');
+
   // Стейт для «Сформировать» — таблица и KPI-карточки показываются после нажатия
   const [reportGenerated, setReportGenerated] = useState(false);
 
@@ -266,6 +285,14 @@ export default function ReportsClient({
     setSelectedApprover('ALL');
     setDynamicsInterval('month');
     setCohortInterval('month');
+    setMinArea('');
+    setMaxArea('');
+    setMinPrice('');
+    setMaxPrice('');
+    setFilterFloor('');
+    setFilterView('ALL');
+    setFilterUnitNumber('');
+    setFilterInitiator('ALL');
     // Для денежного потока расширяем период — показываем прогноз на год вперёд
     if (id === 'RPT-010') {
       const yearAhead = new Date();
@@ -297,15 +324,70 @@ export default function ReportsClient({
           { 'Когорта': '2026-04 (Апр)', 'Клиентов в когорте': 95, 'Средний чек ($)': 115000, 'Конверсия в Won': '8.4%', 'Ср. цикл сделки (дн)': 16 },
           { 'Когорта': '2026-03 (Март)', 'Клиентов в когорте': 80, 'Средний чек ($)': 125000, 'Конверсия в Won': '10.0%', 'Ср. цикл сделки (дн)': 12 }
         ];
-      case 'RPT-013':
+      case 'RPT-011':
         return [
-          { 'Номер инвойса': 'INV-2026-0041', 'Клиент': 'Кайсар Бейсекбаев', 'Дата выписки': today, 'Сумма (GEL)': 245000, 'Статус RS.ge': 'Успешно отправлен' },
-          { 'Номер инвойса': 'INV-2026-0042', 'Клиент': 'Аслан Ислямов', 'Дата выписки': today, 'Сумма (GEL)': 110000, 'Статус RS.ge': 'Успешно отправлен' }
+          { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Квартира': '№303', 'Базовая цена ($)': 935416, 'Индивидуальная скидка (%)': '4.0%', 'Сумма скидки ($)': 37416, 'Статус согласования': 'Одобрено РОП' },
+          { 'Сделка': 'DEAL-9102', 'Клиент': 'Аслан Ислямов', 'Квартира': '№204', 'Базовая цена ($)': 420000, 'Индивидуальная скидка (%)': '6.5%', 'Сумма скидки ($)': 27300, 'Статус согласования': 'Одобрено ТОП' }
         ];
-      case 'RPT-014':
+      case 'RPT-012':
         return [
-          { 'Сделка': 'DEAL-8991', 'Клиент': 'Оганесян Г.', 'Банк-депозитарий': 'ТБС Банк', 'Сумма на эскроу ($)': 145000, 'Этап раскрытия': 'Каркас здания завершен (30% раскрыто)' }
+          { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Банк': 'ТБС Банк', 'Сумма ипотеки ($)': 450000, 'Статус одобрения': 'Одобрено банком' },
+          { 'Сделка': 'DEAL-9051', 'Клиент': 'Смирнов Д.', 'Банк': 'Банк Грузии', 'Сумма ипотеки ($)': 310000, 'Статус одобрения': 'На рассмотрении' }
         ];
+      case 'RPT-013': { // Отчёт по e-invoice
+        const STATUS_LABELS: Record<string, string> = {
+          'SUCCESS': '✅ Успешно отправлен',
+          'PENDING': '⏳ Ожидает отправки',
+          'FAILED': '❌ Ошибка отправки',
+        };
+        const filtered = initialData.taxInvoiceReport.filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (startDate && row.issuedAt < startDate) return false;
+          if (endDate && row.issuedAt > endDate) return false;
+          return true;
+        });
+        return filtered.map((row: any) => ({
+          'Номер инвойса': row.invoiceNumber,
+          'Сделка': row.dealId.startsWith('test') ? '#ТЕСТ' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
+          'Клиент': row.clientName,
+          'Квартира': `№${row.unitNumber}`,
+          'Сумма (GEL)': Math.round(row.amount),
+          'Валюта': row.currency,
+          'Дата выписки': row.issuedAt,
+          'Статус RS.ge': STATUS_LABELS[row.status] || row.status,
+        }));
+      }
+
+      case 'RPT-014': { // Отчёт по эскроу
+        const STATUS_LABELS: Record<string, string> = {
+          'ACTIVE': '🔒 Активен',
+          'RELEASED': '✅ Раскрыт',
+          'CLOSED': '📁 Закрыт',
+        };
+        const filtered = initialData.escrowReport.filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (startDate && row.createdAt < startDate) return false;
+          if (endDate && row.createdAt > endDate) return false;
+          return true;
+        });
+        return filtered.map((row: any) => {
+          const releasePct = row.depositedAmount > 0
+            ? ((row.releasedAmount / row.depositedAmount) * 100).toFixed(1) + '%'
+            : '0%';
+          return {
+            'Сделка': row.dealId.startsWith('test') ? '#ТЕСТ' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
+            'Клиент': row.clientName,
+            'Квартира': `№${row.unitNumber}`,
+            'Банк-депозитарий': row.bankName,
+            'Депонировано ($)': Math.round(row.depositedAmount),
+            'Раскрыто ($)': Math.round(row.releasedAmount),
+            'Остаток ($)': Math.round(row.remainingAmount),
+            'Раскрыто (%)': releasePct,
+            'Этап раскрытия': row.releaseStage,
+            'Статус': STATUS_LABELS[row.status] || row.status,
+          };
+        });
+      }
       case 'RPT-015':
         return [
           { 'Квартира': '№102', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 3, 'Статус': 'Свободно', 'Цена ($)': 97000 },
@@ -1094,10 +1176,174 @@ export default function ReportsClient({
         }));
       }
 
+      case 'RPT-015': { // Остатки свободных помещений
+        const filtered = (initialData.availableUnits || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockNumber !== blocks.find(b => b.id === selectedBlock)?.number) return false;
+          if (selectedUnitType !== 'ALL' && row.type !== selectedUnitType) return false;
+          if (minArea && row.area < parseFloat(minArea)) return false;
+          if (maxArea && row.area > parseFloat(maxArea)) return false;
+          if (minPrice && row.price < parseFloat(minPrice)) return false;
+          if (maxPrice && row.price > parseFloat(maxPrice)) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'Квартира': `№${row.unitNumber}`,
+          'ЖК': row.projectName,
+          'Корпус': row.blockNumber,
+          'Тип': UNIT_TYPE_TRANSLATIONS[row.type] || row.type,
+          'Площадь (м²)': row.area,
+          'Этаж': row.floor,
+          'Статус': 'FREE (Свободно)',
+          'Цена ($)': Math.round(row.price)
+        }));
+      }
+
+      case 'RPT-016': { // Реализованные помещения
+        const filtered = (initialData.soldUnits || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockId !== selectedBlock) return false;
+          if (selectedUnitType !== 'ALL' && row.type !== selectedUnitType) return false;
+          if (minArea && row.area < parseFloat(minArea)) return false;
+          if (maxArea && row.area > parseFloat(maxArea)) return false;
+          if (startDate && row.soldAt && row.soldAt < startDate) return false;
+          if (endDate && row.soldAt && row.soldAt > endDate) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => {
+          const areaVal = Number(row.area) || 1;
+          const sqPrice = Math.round(row.soldPrice / areaVal);
+          return {
+            'Квартира': `№${row.unitNumber}`,
+            'ЖК': row.projectName,
+            'Корпус': row.blockNumber,
+            'Тип': UNIT_TYPE_TRANSLATIONS[row.type] || row.type,
+            'Площадь (м²)': row.area,
+            'Этаж': row.floor,
+            'Цена продажи ($)': Math.round(row.soldPrice),
+            'Дата продажи': row.soldAt,
+            'Цена за м² ($/м²)': sqPrice
+          };
+        });
+      }
+
+      case 'RPT-017': { // Экспозиция объектов
+        const filtered = (initialData.projectExposure || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockNumber !== blocks.find(b => b.id === selectedBlock)?.number) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => {
+          const total = row.totalUnits || 0;
+          const sold = row.soldUnits || 0;
+          const booked = row.bookedUnits || 0;
+          const free = row.freeUnits || 0;
+          const rate = total > 0 ? ((sold / total) * 100).toFixed(1) + '%' : '0.0%';
+          return {
+            'ЖК': row.projectName,
+            'Корпус': row.blockNumber,
+            'Всего объектов': total,
+            'Забронировано': booked,
+            'Продано': sold,
+            'Доля реализации (%)': rate,
+            'Остаток фонда': free
+          };
+        });
+      }
+
+      case 'RPT-018': { // Поиск свободных помещений
+        const filtered = (initialData.freeUnitsSearch || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedUnitType !== 'ALL' && row.type !== selectedUnitType) return false;
+          if (minArea && row.area < parseFloat(minArea)) return false;
+          if (maxArea && row.area > parseFloat(maxArea)) return false;
+          if (minPrice && row.price < parseFloat(minPrice)) return false;
+          if (maxPrice && row.price > parseFloat(maxPrice)) return false;
+          if (filterFloor && row.floor !== parseInt(filterFloor)) return false;
+          if (filterView !== 'ALL' && !row.viewType?.toLowerCase().includes(filterView.toLowerCase())) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'ЖК': row.projectName,
+          'Корпус': row.blockNumber,
+          'Номер': `№${row.unitNumber}`,
+          'Тип': UNIT_TYPE_TRANSLATIONS[row.type] || row.type,
+          'Площадь (м²)': row.area,
+          'Цена ($)': Math.round(row.price),
+          'Этаж': row.floor,
+          'Вид из окна': row.viewType,
+          'Комнат': row.rooms,
+          'Статус': 'FREE (Свободно)'
+        }));
+      }
+
+      case 'RPT-019': { // Журнал изменения цен (PriceHistory)
+        const filtered = (initialData.priceHistory || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (filterUnitNumber && !row.unitNumber.includes(filterUnitNumber)) return false;
+          if (filterInitiator !== 'ALL' && row.initiator !== filterInitiator) return false;
+          if (startDate && row.createdAt && row.createdAt < startDate) return false;
+          if (endDate && row.createdAt && row.createdAt > endDate) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'Квартира': `№${row.unitNumber}`,
+          'ЖК': row.projectName,
+          'Старая цена ($)': Math.round(row.oldPrice),
+          'Новая цена ($)': Math.round(row.newPrice),
+          'Разница ($)': Math.round(row.newPrice - row.oldPrice),
+          'Инициатор': row.initiator,
+          'Дата переоценки': row.createdAt,
+          'Причина': row.reason
+        }));
+      }
+
+      case 'RPT-020': { // Отчёт по площадям (проектная vs фактическая)
+        const filtered = (initialData.areaDiscrepancy || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockNumber !== blocks.find(b => b.id === selectedBlock)?.number) return false;
+          if (filterUnitNumber && !row.unitNumber.includes(filterUnitNumber)) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => {
+          const projected = row.projectedArea || 0;
+          const actual = row.actualArea || projected;
+          const diff = parseFloat((actual - projected).toFixed(2));
+          const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
+
+          let compensationStatus = 'Расхождений нет';
+          if (diff > 0) {
+            const sqPrice = row.price / (projected || 1);
+            const compAmt = Math.round(diff * sqPrice);
+            compensationStatus = `Требуется доплата клиента ($${compAmt.toLocaleString()})`;
+          } else if (diff < 0) {
+            const sqPrice = row.price / (projected || 1);
+            const compAmt = Math.round(Math.abs(diff) * sqPrice);
+            compensationStatus = `Требуется возврат клиенту ($${compAmt.toLocaleString()})`;
+          }
+
+          return {
+            'Квартира': `№${row.unitNumber}`,
+            'ЖК': row.projectName,
+            'Корпус': row.blockNumber,
+            'Проектная площадь (м²)': projected,
+            'Фактическая площадь (м²)': actual,
+            'Разница (м²)': diffStr,
+            'Статус взаиморасчетов': compensationStatus
+          };
+        });
+      }
+
       default:
         return [];
     }
-  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager, draftStatusFilter, dynamicsInterval, cohortInterval, selectedInitiator, selectedApprover]);
+  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager, draftStatusFilter, dynamicsInterval, cohortInterval, selectedInitiator, selectedApprover, minArea, maxArea, minPrice, maxPrice, filterFloor, filterView, filterUnitNumber, filterInitiator]);
 
   // Расчет динамических KPI показателей отчетов
   const reportStats = useMemo(() => {
@@ -1333,7 +1579,6 @@ export default function ReportsClient({
       ];
     }
 
-    // Дефолтные показатели для некритических отчетов
     if (activeReportId === 'RPT-011') {
       let totalDiscountAmount = 0, maxDiscount = 0, totalBase = 0;
       activeReportData.forEach(row => {
@@ -1346,7 +1591,7 @@ export default function ReportsClient({
       return [
         { label: 'Сделок со скидкой', value: activeReportData.length.toString(), subtext: `Средняя скидка: ${avgDiscount}`, icon: '🏷️' },
         { label: 'Общая сумма скидок', value: `$${totalDiscountAmount.toLocaleString()}`, subtext: 'Суммарная потеря маржи', icon: '📉' },
-        { label: 'Макс. скидка', value: `${maxDiscount}%`, subtext: 'Наибольшая в выборке', icon: '⚠️' },
+        { label: 'Макс. скидка', value: `${maxDiscount}%`, subtext: 'Наибольшая в выборке', icon: '⚠️' }
       ];
     }
 
@@ -1365,10 +1610,157 @@ export default function ReportsClient({
       return [
         { label: 'Ипотечных сделок', value: activeReportData.length.toString(), subtext: `Одобрено: ${approved} | Отказ: ${rejected} | В работе: ${pending}`, icon: '🏦' },
         { label: 'Общая сумма ипотек', value: `$${totalLoan.toLocaleString()}`, subtext: 'Сумма кредитов по всем сделкам', icon: '💰' },
-        { label: 'Конверсия одобрений', value: approvalRate, subtext: 'Доля одобренных заявок', icon: '✅' },
+        { label: 'Конверсия одобрений', value: approvalRate, subtext: 'Доля одобренных заявок', icon: '✅' }
       ];
     }
 
+    if (activeReportId === 'RPT-015') {
+      let totalFree = activeReportData.length;
+      let totalValue = 0;
+      let avgPrice = 0;
+      activeReportData.forEach(row => {
+        totalValue += Number(row['Цена ($)']) || 0;
+      });
+      avgPrice = totalFree > 0 ? Math.round(totalValue / totalFree) : 0;
+      return [
+        { label: 'Свободных юнитов', value: totalFree.toString(), subtext: 'В остатках фонда', icon: '🏢' },
+        { label: 'Стоимость фонда', value: `$${totalValue.toLocaleString()}`, subtext: 'Суммарный объем Available', icon: '💰' },
+        { label: 'Средняя цена лота', value: `$${avgPrice.toLocaleString()}`, subtext: 'В продаже на данный момент', icon: '🏷️' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-016') {
+      let totalSold = activeReportData.length;
+      let totalRevenue = 0;
+      let totalSqm = 0;
+      activeReportData.forEach(row => {
+        totalRevenue += Number(row['Цена продажи ($)']) || 0;
+        totalSqm += Number(row['Площадь (м²)']) || 0;
+      });
+      const avgSqmPrice = totalSqm > 0 ? Math.round(totalRevenue / totalSqm) : 0;
+      return [
+        { label: 'Реализовано юнитов', value: totalSold.toString(), subtext: 'Всего проданных за период', icon: '🏢' },
+        { label: 'Общий объем продаж', value: `$${totalRevenue.toLocaleString()}`, subtext: 'Фактическая выручка', icon: '💵' },
+        { label: 'Средняя цена за м²', value: `$${avgSqmPrice.toLocaleString()}/м²`, subtext: 'Исходя из общей площади', icon: '📊' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-017') {
+      let totalUnits = 0;
+      let soldUnits = 0;
+      activeReportData.forEach(row => {
+        totalUnits += Number(row['Всего объектов']) || 0;
+        soldUnits += Number(row['Продано']) || 0;
+      });
+      const rate = totalUnits > 0 ? ((soldUnits / totalUnits) * 100).toFixed(1) + '%' : '0.0%';
+      return [
+        { label: 'Всего объектов', value: totalUnits.toString(), subtext: 'В экспозиции по проектам', icon: '🏢' },
+        { label: 'Всего реализовано', value: `${soldUnits} шт.`, subtext: `Доля реализации: ${rate}`, icon: '✅' },
+        { label: 'Остаток в продаже', value: (totalUnits - soldUnits).toString(), subtext: 'Свободно или забронировано', icon: '🔑' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-018') {
+      let totalMatched = activeReportData.length;
+      let minLotPrice = Infinity;
+      let maxLotPrice = -Infinity;
+      activeReportData.forEach(row => {
+        const price = Number(row['Цена ($)']) || 0;
+        if (price < minLotPrice) minLotPrice = price;
+        if (price > maxLotPrice) maxLotPrice = price;
+      });
+      if (totalMatched === 0) {
+        minLotPrice = 0;
+        maxLotPrice = 0;
+      }
+      return [
+        { label: 'Подобрано вариантов', value: totalMatched.toString(), subtext: 'Соответствуют критериям клиента', icon: '🏢' },
+        { label: 'Минимальная стоимость', value: minLotPrice === Infinity ? '$0' : `$${minLotPrice.toLocaleString()}`, subtext: 'Из подходящих вариантов', icon: '📉' },
+        { label: 'Максимальная стоимость', value: maxLotPrice === -Infinity ? '$0' : `$${maxLotPrice.toLocaleString()}`, subtext: 'Из подходящих вариантов', icon: '📈' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-019') {
+      let totalChanges = activeReportData.length;
+      let totalUp = 0;
+      let totalDown = 0;
+      activeReportData.forEach(row => {
+        const diff = Number(row['Разница ($)']) || 0;
+        if (diff > 0) totalUp += diff;
+        else if (diff < 0) totalDown += Math.abs(diff);
+      });
+      return [
+        { label: 'Всего изменений', value: totalChanges.toString(), subtext: 'Записей в истории цен', icon: '📝' },
+        { label: 'Сумма наценок', value: `+$${totalUp.toLocaleString()}`, subtext: 'Общий прирост стоимости лотов', icon: '📈' },
+        { label: 'Сумма уценок', value: `-$${totalDown.toLocaleString()}`, subtext: 'Общее снижение стоимости лотов', icon: '📉' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-020') {
+      let totalUnits = activeReportData.length;
+      let discrepancyCount = 0;
+      let totalClientDue = 0;
+      let totalClientRefund = 0;
+
+      activeReportData.forEach(row => {
+        const statusText = row['Статус взаиморасчетов'] || '';
+        if (statusText.includes('Требуется доплата')) {
+          discrepancyCount++;
+          const match = statusText.match(/\$(\d[\d\s,]*)/);
+          if (match) {
+            totalClientDue += parseInt(match[1].replace(/[\s,]/g, '')) || 0;
+          }
+        } else if (statusText.includes('Требуется возврат')) {
+          discrepancyCount++;
+          const match = statusText.match(/\$(\d[\d\s,]*)/);
+          if (match) {
+            totalClientRefund += parseInt(match[1].replace(/[\s,]/g, '')) || 0;
+          }
+        }
+      });
+
+      return [
+        { label: 'Проверено квартир', value: totalUnits.toString(), subtext: `С расхождениями БТИ: ${discrepancyCount}`, icon: '🏢' },
+        { label: 'К доплате клиентами', value: `+$${totalClientDue.toLocaleString()}`, subtext: 'Дополнительные соглашения', icon: '📈' },
+        { label: 'К возврату клиентам', value: `-$${totalClientRefund.toLocaleString()}`, subtext: 'Переплаты по обмеру БТИ', icon: '📉' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-013') {
+      let totalAmount = 0, success = 0, pending = 0, failed = 0;
+      activeReportData.forEach(row => {
+        totalAmount += Number(row['Сумма (GEL)']) || 0;
+        const status = row['Статус RS.ge'] || '';
+        if (status.includes('Успешно')) success++;
+        if (status.includes('Ожидает')) pending++;
+        if (status.includes('Ошибка')) failed++;
+      });
+      return [
+        { label: 'Всего инвойсов', value: activeReportData.length.toString(), subtext: `✅ ${success} | ⏳ ${pending} | ❌ ${failed}`, icon: '🧾' },
+        { label: 'Общая сумма', value: `₾${totalAmount.toLocaleString()}`, subtext: 'По всем выписанным инвойсам', icon: '💴' },
+        { label: 'Успешно отправлено', value: `${activeReportData.length > 0 ? ((success / activeReportData.length) * 100).toFixed(0) : 0}%`, subtext: `${success} из ${activeReportData.length} инвойсов`, icon: '✅' },
+      ];
+    }
+
+    if (activeReportId === 'RPT-014') {
+      let totalDeposited = 0, totalReleased = 0, activeCount = 0, releasedCount = 0;
+      activeReportData.forEach(row => {
+        totalDeposited += Number(row['Депонировано ($)']) || 0;
+        totalReleased += Number(row['Раскрыто ($)']) || 0;
+        if (row['Статус']?.includes('Активен')) activeCount++;
+        if (row['Статус']?.includes('Раскрыт')) releasedCount++;
+      });
+      const releasePct = totalDeposited > 0
+        ? ((totalReleased / totalDeposited) * 100).toFixed(1) + '%'
+        : '0%';
+      return [
+        { label: 'Эскроу счетов', value: activeReportData.length.toString(), subtext: `🔒 Активных: ${activeCount} | ✅ Раскрытых: ${releasedCount}`, icon: '🏦' },
+        { label: 'Депонировано', value: `$${totalDeposited.toLocaleString()}`, subtext: 'Общая сумма на счетах', icon: '💰' },
+        { label: 'Раскрыто', value: `$${totalReleased.toLocaleString()}`, subtext: `${releasePct} от общей суммы`, icon: '🔓' },
+      ];
+    }
+
+    // Дефолтные показатели для некритических отчетов
     return [
       { label: 'Всего записей', value: activeReportData.length.toString(), subtext: 'В текущей таблице', icon: '📊' }
     ];
@@ -1624,8 +2016,8 @@ export default function ReportsClient({
             </div>
           )}
 
-          {/* Корпус - RPT-002 */}
-          {activeReportId === 'RPT-002' && (
+          {/* Корпус - RPT-002, RPT-015, RPT-016, RPT-017, RPT-020 */}
+          {(activeReportId === 'RPT-002' || activeReportId === 'RPT-015' || activeReportId === 'RPT-016' || activeReportId === 'RPT-017' || activeReportId === 'RPT-020') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Корпус</label>
               <select
@@ -1645,8 +2037,8 @@ export default function ReportsClient({
             </div>
           )}
 
-          {/* Тип помещения - RPT-002 */}
-          {activeReportId === 'RPT-002' && (
+          {/* Тип помещения - RPT-002, RPT-015, RPT-016, RPT-017, RPT-018 */}
+          {(activeReportId === 'RPT-002' || activeReportId === 'RPT-015' || activeReportId === 'RPT-016' || activeReportId === 'RPT-017' || activeReportId === 'RPT-018') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Тип помещения</label>
               <select
@@ -1788,6 +2180,122 @@ export default function ReportsClient({
                 <option value="week">Неделя</option>
                 <option value="month">Месяц</option>
                 <option value="quarter">Квартал</option>
+              </select>
+            </div>
+          )}
+
+          {/* Фильтры площади от/до — RPT-015, RPT-016, RPT-018 */}
+          {(activeReportId === 'RPT-015' || activeReportId === 'RPT-016' || activeReportId === 'RPT-018') && (
+            <>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Площадь от (м²)</label>
+                <input
+                  type="number"
+                  placeholder="Мин"
+                  className={styles.filterInput}
+                  value={minArea}
+                  onChange={e => setMinArea(e.target.value)}
+                />
+              </div>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Площадь до (м²)</label>
+                <input
+                  type="number"
+                  placeholder="Макс"
+                  className={styles.filterInput}
+                  value={maxArea}
+                  onChange={e => setMaxArea(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Фильтры цены от/до — RPT-015, RPT-018 */}
+          {(activeReportId === 'RPT-015' || activeReportId === 'RPT-018') && (
+            <>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Цена от ($)</label>
+                <input
+                  type="number"
+                  placeholder="Мин"
+                  className={styles.filterInput}
+                  value={minPrice}
+                  onChange={e => setMinPrice(e.target.value)}
+                />
+              </div>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Цена до ($)</label>
+                <input
+                  type="number"
+                  placeholder="Макс"
+                  className={styles.filterInput}
+                  value={maxPrice}
+                  onChange={e => setMaxPrice(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Фильтр этажа — RPT-018 */}
+          {activeReportId === 'RPT-018' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Этаж</label>
+              <input
+                type="number"
+                placeholder="Этаж"
+                className={styles.filterInput}
+                value={filterFloor}
+                onChange={e => setFilterFloor(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* Фильтр вида из окна — RPT-018 */}
+          {activeReportId === 'RPT-018' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Вид из окна</label>
+              <select
+                className={styles.filterInput}
+                value={filterView}
+                onChange={e => setFilterView(e.target.value)}
+              >
+                <option value="ALL">Любой вид</option>
+                <option value="Море">Море</option>
+                <option value="Горы">Горы</option>
+                <option value="Город">Город</option>
+                <option value="Двор">Двор</option>
+                <option value="Парк">Парк</option>
+              </select>
+            </div>
+          )}
+
+          {/* Фильтр номера квартиры — RPT-019, RPT-020 */}
+          {(activeReportId === 'RPT-019' || activeReportId === 'RPT-020') && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Номер квартиры</label>
+              <input
+                type="text"
+                placeholder="Номер"
+                className={styles.filterInput}
+                value={filterUnitNumber}
+                onChange={e => setFilterUnitNumber(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* Фильтр инициатора — RPT-019 */}
+          {activeReportId === 'RPT-019' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Инициатор</label>
+              <select
+                className={styles.filterInput}
+                value={filterInitiator}
+                onChange={e => setFilterInitiator(e.target.value)}
+              >
+                <option value="ALL">Все инициаторы</option>
+                {Array.from(new Set((initialData.priceHistory || []).map((r: any) => r.initiator).filter(Boolean))).map((init: any) => (
+                  <option key={init} value={init}>{init}</option>
+                ))}
               </select>
             </div>
           )}
