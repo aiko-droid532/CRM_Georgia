@@ -21,7 +21,13 @@ import {
   getSalesDynamicsReportData,
   getCohortAnalysisReportData,
   getDiscountReportData,
-  getMortgageReportData
+  getMortgageReportData,
+  getAvailableUnitsReportData,
+  getSoldUnitsReportData,
+  getProjectExposureReportData,
+  getFreeUnitsSearchData,
+  getPriceHistoryReportData,
+  getAreaDiscrepancyReportData
 } from '@/app/actions/reports';
 import { getExchangeRate } from '@/app/actions/exchange';
 import ReportsClient from './ReportsClient';
@@ -63,6 +69,12 @@ export default async function ReportsPage({
   const cohortAnalysis = await getCohortAnalysisReportData(organizationId);
   const discountReport = await getDiscountReportData(organizationId);
   const mortgageReport = await getMortgageReportData(organizationId);
+  const availableUnits = await getAvailableUnitsReportData(organizationId);
+  const soldUnits = await getSoldUnitsReportData(organizationId);
+  const projectExposure = await getProjectExposureReportData(organizationId);
+  const freeUnitsSearch = await getFreeUnitsSearchData(organizationId);
+  const priceHistory = await getPriceHistoryReportData(organizationId);
+  const areaDiscrepancy = await getAreaDiscrepancyReportData(organizationId);
 
   // Загружаем динамические справочники для фильтров
   const projects = await getProjectsList(organizationId);
@@ -100,7 +112,13 @@ export default async function ReportsPage({
         salesDynamics,
         cohortAnalysis,
         discountReport,
-        mortgageReport
+        mortgageReport,
+        availableUnits,
+        soldUnits,
+        projectExposure,
+        freeUnitsSearch,
+        priceHistory,
+        areaDiscrepancy
       }}
     />
   );
