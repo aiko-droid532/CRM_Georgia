@@ -44,7 +44,8 @@ const REPORT_CATALOG = [
 
 const IMPLEMENTED_REPORTS = [
   'RPT-001', 'RPT-002', 'RPT-003', 'RPT-004', 'RPT-005', 'RPT-006', 'RPT-007',
-  'RPT-008', 'RPT-009', 'RPT-010', 'RPT-011', 'RPT-012', 'RPT-023', 'RPT-024'
+  'RPT-008', 'RPT-009', 'RPT-010', 'RPT-011', 'RPT-012', 'RPT-015', 'RPT-016',
+  'RPT-017', 'RPT-018', 'RPT-019', 'RPT-020', 'RPT-023', 'RPT-024'
 ];
 
 const CATEGORIES = [
@@ -79,6 +80,12 @@ interface ReportsClientProps {
     cohortAnalysis: any[];
     discountReport: any[];
     mortgageReport: any[];
+    availableUnits: any[];
+    soldUnits: any[];
+    projectExposure: any[];
+    freeUnitsSearch: any[];
+    priceHistory: any[];
+    areaDiscrepancy: any[];
   };
   usdRate?: number;
 }
@@ -237,6 +244,16 @@ export default function ReportsClient({
   // Фильтры для RPT-007
   const [cohortInterval, setCohortInterval] = useState('month'); // week | month | quarter
 
+  // Дополнительные фильтры для RPT-015 - RPT-020
+  const [minArea, setMinArea] = useState('');
+  const [maxArea, setMaxArea] = useState('');
+  const [minPrice, setMinPrice] = useState('');
+  const [maxPrice, setMaxPrice] = useState('');
+  const [filterFloor, setFilterFloor] = useState('');
+  const [filterView, setFilterView] = useState('ALL');
+  const [filterUnitNumber, setFilterUnitNumber] = useState('');
+  const [filterInitiator, setFilterInitiator] = useState('ALL');
+
   // Стейт для «Сформировать» — таблица и KPI-карточки показываются после нажатия
   const [reportGenerated, setReportGenerated] = useState(false);
 
@@ -266,6 +283,14 @@ export default function ReportsClient({
     setSelectedApprover('ALL');
     setDynamicsInterval('month');
     setCohortInterval('month');
+    setMinArea('');
+    setMaxArea('');
+    setMinPrice('');
+    setMaxPrice('');
+    setFilterFloor('');
+    setFilterView('ALL');
+    setFilterUnitNumber('');
+    setFilterInitiator('ALL');
     // Для денежного потока расширяем период — показываем прогноз на год вперёд
     if (id === 'RPT-010') {
       const yearAhead = new Date();
@@ -296,6 +321,16 @@ export default function ReportsClient({
           { 'Когорта': '2026-05 (Май)', 'Клиентов в когорте': 120, 'Средний чек ($)': 120000, 'Конверсия в Won': '9.2%', 'Ср. цикл сделки (дн)': 14 },
           { 'Когорта': '2026-04 (Апр)', 'Клиентов в когорте': 95, 'Средний чек ($)': 115000, 'Конверсия в Won': '8.4%', 'Ср. цикл сделки (дн)': 16 },
           { 'Когорта': '2026-03 (Март)', 'Клиентов в когорте': 80, 'Средний чек ($)': 125000, 'Конверсия в Won': '10.0%', 'Ср. цикл сделки (дн)': 12 }
+        ];
+      case 'RPT-011':
+        return [
+          { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Квартира': '№303', 'Базовая цена ($)': 935416, 'Индивидуальная скидка (%)': '4.0%', 'Сумма скидки ($)': 37416, 'Статус согласования': 'Одобрено РОП' },
+          { 'Сделка': 'DEAL-9102', 'Клиент': 'Аслан Ислямов', 'Квартира': '№204', 'Базовая цена ($)': 420000, 'Индивидуальная скидка (%)': '6.5%', 'Сумма скидки ($)': 27300, 'Статус согласования': 'Одобрено ТОП' }
+        ];
+      case 'RPT-012':
+        return [
+          { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Банк': 'ТБС Банк', 'Сумма ипотеки ($)': 450000, 'Статус одобрения': 'Одобрено банком' },
+          { 'Сделка': 'DEAL-9051', 'Клиент': 'Смирнов Д.', 'Банк': 'Банк Грузии', 'Сумма ипотеки ($)': 310000, 'Статус одобрения': 'На рассмотрении' }
         ];
       case 'RPT-013':
         return [
@@ -629,14 +664,14 @@ export default function ReportsClient({
           if (selectedManager !== 'ALL' && row.managerName !== selectedManager) return false;
           if (startDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) < startDate) return false;
           if (endDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) > endDate) return false;
-
+          
           let status = 'IN_PROGRESS';
           if (row.draftApprovedAt) {
             status = 'APPROVED';
           } else if (row.currentDealStatus === 'FAILED' || row.currentDealStatus === 'CANCELLED') {
             status = 'REJECTED';
           }
-
+          
           if (draftStatusFilter !== 'ALL' && status !== draftStatusFilter) return false;
           return true;
         });
@@ -673,7 +708,7 @@ export default function ReportsClient({
           if (!dateStr) return 'unknown';
           const d = new Date(dateStr);
           if (isNaN(d.getTime())) return 'unknown';
-
+          
           if (dynamicsInterval === 'day') {
             return dateStr.substring(0, 10);
           }
@@ -699,7 +734,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && l.projectId !== selectedProject) return;
           if (startDate && l.createdAt && l.createdAt.substring(0, 10) < startDate) return;
           if (endDate && l.createdAt && l.createdAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(l.createdAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -712,7 +747,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && v.projectId !== selectedProject) return;
           if (startDate && v.visitedAt && v.visitedAt.substring(0, 10) < startDate) return;
           if (endDate && v.visitedAt && v.visitedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(v.visitedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -725,7 +760,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && a.projectId !== selectedProject) return;
           if (startDate && a.appliedAt && a.appliedAt.substring(0, 10) < startDate) return;
           if (endDate && a.appliedAt && a.appliedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(a.appliedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -738,7 +773,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && b.projectId !== selectedProject) return;
           if (startDate && b.createdAt && b.createdAt.substring(0, 10) < startDate) return;
           if (endDate && b.createdAt && b.createdAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(b.createdAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -751,7 +786,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && c.projectId !== selectedProject) return;
           if (startDate && c.signedAt && c.signedAt.substring(0, 10) < startDate) return;
           if (endDate && c.signedAt && c.signedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(c.signedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -765,7 +800,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && p.projectId !== selectedProject) return;
           if (startDate && p.paidAt && p.paidAt.substring(0, 10) < startDate) return;
           if (endDate && p.paidAt && p.paidAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(p.paidAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -810,7 +845,7 @@ export default function ReportsClient({
           if (!dateStr) return 'unknown';
           const d = new Date(dateStr);
           if (isNaN(d.getTime())) return 'unknown';
-
+          
           if (cohortInterval === 'week') {
             const day = d.getDay();
             const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -835,19 +870,19 @@ export default function ReportsClient({
           if (endDate && row.leadCreatedAt && row.leadCreatedAt.substring(0, 10) > endDate) return;
           if (selectedSource !== 'ALL' && row.source !== selectedSource) return;
           if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return;
-
+          
           const key = getCohortKey(row.leadCreatedAt);
           if (key === 'unknown') return;
           if (!cohorts[key]) {
             cohorts[key] = { totalLeads: 0, wonDeals: 0, totalRevenue: 0, totalCycleDays: 0 };
           }
           cohorts[key].totalLeads += 1;
-
+          
           const isWon = row.dealStatus === 'SUCCESS' || row.dealStatus === 'PAYMENT_CONFIRMED';
           if (isWon) {
             cohorts[key].wonDeals += 1;
             cohorts[key].totalRevenue += row.price || 0;
-
+            
             if (row.leadCreatedAt && row.dealUpdatedAt) {
               const leadDate = new Date(row.leadCreatedAt);
               const dealDate = new Date(row.dealUpdatedAt);
@@ -880,7 +915,7 @@ export default function ReportsClient({
             const avgCheck = data.wonDeals > 0 ? Math.round(data.totalRevenue / data.wonDeals) : 0;
             const conversion = data.totalLeads > 0 ? ((data.wonDeals / data.totalLeads) * 100).toFixed(1) + '%' : '0.0%';
             const avgCycle = data.wonDeals > 0 ? Math.round(data.totalCycleDays / data.wonDeals) : 0;
-
+            
             return {
               'Когорта': formatCohortLabel(key),
               'Клиентов в когорте': data.totalLeads,
@@ -1094,10 +1129,174 @@ export default function ReportsClient({
         }));
       }
 
+      case 'RPT-015': { // Остатки свободных помещений
+        const filtered = (initialData.availableUnits || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockNumber !== blocks.find(b => b.id === selectedBlock)?.number) return false;
+          if (selectedUnitType !== 'ALL' && row.type !== selectedUnitType) return false;
+          if (minArea && row.area < parseFloat(minArea)) return false;
+          if (maxArea && row.area > parseFloat(maxArea)) return false;
+          if (minPrice && row.price < parseFloat(minPrice)) return false;
+          if (maxPrice && row.price > parseFloat(maxPrice)) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'Квартира': `№${row.unitNumber}`,
+          'ЖК': row.projectName,
+          'Корпус': row.blockNumber,
+          'Тип': UNIT_TYPE_TRANSLATIONS[row.type] || row.type,
+          'Площадь (м²)': row.area,
+          'Этаж': row.floor,
+          'Статус': 'FREE (Свободно)',
+          'Цена ($)': Math.round(row.price)
+        }));
+      }
+
+      case 'RPT-016': { // Реализованные помещения
+        const filtered = (initialData.soldUnits || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockId !== selectedBlock) return false;
+          if (selectedUnitType !== 'ALL' && row.type !== selectedUnitType) return false;
+          if (minArea && row.area < parseFloat(minArea)) return false;
+          if (maxArea && row.area > parseFloat(maxArea)) return false;
+          if (startDate && row.soldAt && row.soldAt < startDate) return false;
+          if (endDate && row.soldAt && row.soldAt > endDate) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => {
+          const areaVal = Number(row.area) || 1;
+          const sqPrice = Math.round(row.soldPrice / areaVal);
+          return {
+            'Квартира': `№${row.unitNumber}`,
+            'ЖК': row.projectName,
+            'Корпус': row.blockNumber,
+            'Тип': UNIT_TYPE_TRANSLATIONS[row.type] || row.type,
+            'Площадь (м²)': row.area,
+            'Этаж': row.floor,
+            'Цена продажи ($)': Math.round(row.soldPrice),
+            'Дата продажи': row.soldAt,
+            'Цена за м² ($/м²)': sqPrice
+          };
+        });
+      }
+
+      case 'RPT-017': { // Экспозиция объектов
+        const filtered = (initialData.projectExposure || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockNumber !== blocks.find(b => b.id === selectedBlock)?.number) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => {
+          const total = row.totalUnits || 0;
+          const sold = row.soldUnits || 0;
+          const booked = row.bookedUnits || 0;
+          const free = row.freeUnits || 0;
+          const rate = total > 0 ? ((sold / total) * 100).toFixed(1) + '%' : '0.0%';
+          return {
+            'ЖК': row.projectName,
+            'Корпус': row.blockNumber,
+            'Всего объектов': total,
+            'Забронировано': booked,
+            'Продано': sold,
+            'Доля реализации (%)': rate,
+            'Остаток фонда': free
+          };
+        });
+      }
+
+      case 'RPT-018': { // Поиск свободных помещений
+        const filtered = (initialData.freeUnitsSearch || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedUnitType !== 'ALL' && row.type !== selectedUnitType) return false;
+          if (minArea && row.area < parseFloat(minArea)) return false;
+          if (maxArea && row.area > parseFloat(maxArea)) return false;
+          if (minPrice && row.price < parseFloat(minPrice)) return false;
+          if (maxPrice && row.price > parseFloat(maxPrice)) return false;
+          if (filterFloor && row.floor !== parseInt(filterFloor)) return false;
+          if (filterView !== 'ALL' && !row.viewType?.toLowerCase().includes(filterView.toLowerCase())) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'ЖК': row.projectName,
+          'Корпус': row.blockNumber,
+          'Номер': `№${row.unitNumber}`,
+          'Тип': UNIT_TYPE_TRANSLATIONS[row.type] || row.type,
+          'Площадь (м²)': row.area,
+          'Цена ($)': Math.round(row.price),
+          'Этаж': row.floor,
+          'Вид из окна': row.viewType,
+          'Комнат': row.rooms,
+          'Статус': 'FREE (Свободно)'
+        }));
+      }
+
+      case 'RPT-019': { // Журнал изменения цен (PriceHistory)
+        const filtered = (initialData.priceHistory || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (filterUnitNumber && !row.unitNumber.includes(filterUnitNumber)) return false;
+          if (filterInitiator !== 'ALL' && row.initiator !== filterInitiator) return false;
+          if (startDate && row.createdAt && row.createdAt < startDate) return false;
+          if (endDate && row.createdAt && row.createdAt > endDate) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => ({
+          'Квартира': `№${row.unitNumber}`,
+          'ЖК': row.projectName,
+          'Старая цена ($)': Math.round(row.oldPrice),
+          'Новая цена ($)': Math.round(row.newPrice),
+          'Разница ($)': Math.round(row.newPrice - row.oldPrice),
+          'Инициатор': row.initiator,
+          'Дата переоценки': row.createdAt,
+          'Причина': row.reason
+        }));
+      }
+
+      case 'RPT-020': { // Отчёт по площадям (проектная vs фактическая)
+        const filtered = (initialData.areaDiscrepancy || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedBlock !== 'ALL' && row.blockNumber !== blocks.find(b => b.id === selectedBlock)?.number) return false;
+          if (filterUnitNumber && !row.unitNumber.includes(filterUnitNumber)) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => {
+          const projected = row.projectedArea || 0;
+          const actual = row.actualArea || projected;
+          const diff = parseFloat((actual - projected).toFixed(2));
+          const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
+          
+          let compensationStatus = 'Расхождений нет';
+          if (diff > 0) {
+            const sqPrice = row.price / (projected || 1);
+            const compAmt = Math.round(diff * sqPrice);
+            compensationStatus = `Требуется доплата клиента ($${compAmt.toLocaleString()})`;
+          } else if (diff < 0) {
+            const sqPrice = row.price / (projected || 1);
+            const compAmt = Math.round(Math.abs(diff) * sqPrice);
+            compensationStatus = `Требуется возврат клиенту ($${compAmt.toLocaleString()})`;
+          }
+
+          return {
+            'Квартира': `№${row.unitNumber}`,
+            'ЖК': row.projectName,
+            'Корпус': row.blockNumber,
+            'Проектная площадь (м²)': projected,
+            'Фактическая площадь (м²)': actual,
+            'Разница (м²)': diffStr,
+            'Статус взаиморасчетов': compensationStatus
+          };
+        });
+      }
+
       default:
         return [];
     }
-  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager, draftStatusFilter, dynamicsInterval, cohortInterval, selectedInitiator, selectedApprover]);
+  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager, draftStatusFilter, dynamicsInterval, cohortInterval, selectedInitiator, selectedApprover, minArea, maxArea, minPrice, maxPrice, filterFloor, filterView, filterUnitNumber, filterInitiator]);
 
   // Расчет динамических KPI показателей отчетов
   const reportStats = useMemo(() => {
@@ -1333,7 +1532,6 @@ export default function ReportsClient({
       ];
     }
 
-    // Дефолтные показатели для некритических отчетов
     if (activeReportId === 'RPT-011') {
       let totalDiscountAmount = 0, maxDiscount = 0, totalBase = 0;
       activeReportData.forEach(row => {
@@ -1346,7 +1544,7 @@ export default function ReportsClient({
       return [
         { label: 'Сделок со скидкой', value: activeReportData.length.toString(), subtext: `Средняя скидка: ${avgDiscount}`, icon: '🏷️' },
         { label: 'Общая сумма скидок', value: `$${totalDiscountAmount.toLocaleString()}`, subtext: 'Суммарная потеря маржи', icon: '📉' },
-        { label: 'Макс. скидка', value: `${maxDiscount}%`, subtext: 'Наибольшая в выборке', icon: '⚠️' },
+        { label: 'Макс. скидка', value: `${maxDiscount}%`, subtext: 'Наибольшая в выборке', icon: '⚠️' }
       ];
     }
 
@@ -1365,10 +1563,123 @@ export default function ReportsClient({
       return [
         { label: 'Ипотечных сделок', value: activeReportData.length.toString(), subtext: `Одобрено: ${approved} | Отказ: ${rejected} | В работе: ${pending}`, icon: '🏦' },
         { label: 'Общая сумма ипотек', value: `$${totalLoan.toLocaleString()}`, subtext: 'Сумма кредитов по всем сделкам', icon: '💰' },
-        { label: 'Конверсия одобрений', value: approvalRate, subtext: 'Доля одобренных заявок', icon: '✅' },
+        { label: 'Конверсия одобрений', value: approvalRate, subtext: 'Доля одобренных заявок', icon: '✅' }
       ];
     }
 
+    if (activeReportId === 'RPT-015') {
+      let totalFree = activeReportData.length;
+      let totalValue = 0;
+      let avgPrice = 0;
+      activeReportData.forEach(row => {
+        totalValue += Number(row['Цена ($)']) || 0;
+      });
+      avgPrice = totalFree > 0 ? Math.round(totalValue / totalFree) : 0;
+      return [
+        { label: 'Свободных юнитов', value: totalFree.toString(), subtext: 'В остатках фонда', icon: '🏢' },
+        { label: 'Стоимость фонда', value: `$${totalValue.toLocaleString()}`, subtext: 'Суммарный объем Available', icon: '💰' },
+        { label: 'Средняя цена лота', value: `$${avgPrice.toLocaleString()}`, subtext: 'В продаже на данный момент', icon: '🏷️' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-016') {
+      let totalSold = activeReportData.length;
+      let totalRevenue = 0;
+      let totalSqm = 0;
+      activeReportData.forEach(row => {
+        totalRevenue += Number(row['Цена продажи ($)']) || 0;
+        totalSqm += Number(row['Площадь (м²)']) || 0;
+      });
+      const avgSqmPrice = totalSqm > 0 ? Math.round(totalRevenue / totalSqm) : 0;
+      return [
+        { label: 'Реализовано юнитов', value: totalSold.toString(), subtext: 'Всего проданных за период', icon: '🏢' },
+        { label: 'Общий объем продаж', value: `$${totalRevenue.toLocaleString()}`, subtext: 'Фактическая выручка', icon: '💵' },
+        { label: 'Средняя цена за м²', value: `$${avgSqmPrice.toLocaleString()}/м²`, subtext: 'Исходя из общей площади', icon: '📊' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-017') {
+      let totalUnits = 0;
+      let soldUnits = 0;
+      activeReportData.forEach(row => {
+        totalUnits += Number(row['Всего объектов']) || 0;
+        soldUnits += Number(row['Продано']) || 0;
+      });
+      const rate = totalUnits > 0 ? ((soldUnits / totalUnits) * 100).toFixed(1) + '%' : '0.0%';
+      return [
+        { label: 'Всего объектов', value: totalUnits.toString(), subtext: 'В экспозиции по проектам', icon: '🏢' },
+        { label: 'Всего реализовано', value: `${soldUnits} шт.`, subtext: `Доля реализации: ${rate}`, icon: '✅' },
+        { label: 'Остаток в продаже', value: (totalUnits - soldUnits).toString(), subtext: 'Свободно или забронировано', icon: '🔑' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-018') {
+      let totalMatched = activeReportData.length;
+      let minLotPrice = Infinity;
+      let maxLotPrice = -Infinity;
+      activeReportData.forEach(row => {
+        const price = Number(row['Цена ($)']) || 0;
+        if (price < minLotPrice) minLotPrice = price;
+        if (price > maxLotPrice) maxLotPrice = price;
+      });
+      if (totalMatched === 0) {
+        minLotPrice = 0;
+        maxLotPrice = 0;
+      }
+      return [
+        { label: 'Подобрано вариантов', value: totalMatched.toString(), subtext: 'Соответствуют критериям клиента', icon: '🏢' },
+        { label: 'Минимальная стоимость', value: minLotPrice === Infinity ? '$0' : `$${minLotPrice.toLocaleString()}`, subtext: 'Из подходящих вариантов', icon: '📉' },
+        { label: 'Максимальная стоимость', value: maxLotPrice === -Infinity ? '$0' : `$${maxLotPrice.toLocaleString()}`, subtext: 'Из подходящих вариантов', icon: '📈' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-019') {
+      let totalChanges = activeReportData.length;
+      let totalUp = 0;
+      let totalDown = 0;
+      activeReportData.forEach(row => {
+        const diff = Number(row['Разница ($)']) || 0;
+        if (diff > 0) totalUp += diff;
+        else if (diff < 0) totalDown += Math.abs(diff);
+      });
+      return [
+        { label: 'Всего изменений', value: totalChanges.toString(), subtext: 'Записей в истории цен', icon: '📝' },
+        { label: 'Сумма наценок', value: `+$${totalUp.toLocaleString()}`, subtext: 'Общий прирост стоимости лотов', icon: '📈' },
+        { label: 'Сумма уценок', value: `-$${totalDown.toLocaleString()}`, subtext: 'Общее снижение стоимости лотов', icon: '📉' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-020') {
+      let totalUnits = activeReportData.length;
+      let discrepancyCount = 0;
+      let totalClientDue = 0;
+      let totalClientRefund = 0;
+
+      activeReportData.forEach(row => {
+        const statusText = row['Статус взаиморасчетов'] || '';
+        if (statusText.includes('Требуется доплата')) {
+          discrepancyCount++;
+          const match = statusText.match(/\$(\d[\d\s,]*)/);
+          if (match) {
+            totalClientDue += parseInt(match[1].replace(/[\s,]/g, '')) || 0;
+          }
+        } else if (statusText.includes('Требуется возврат')) {
+          discrepancyCount++;
+          const match = statusText.match(/\$(\d[\d\s,]*)/);
+          if (match) {
+            totalClientRefund += parseInt(match[1].replace(/[\s,]/g, '')) || 0;
+          }
+        }
+      });
+
+      return [
+        { label: 'Проверено квартир', value: totalUnits.toString(), subtext: `С расхождениями БТИ: ${discrepancyCount}`, icon: '🏢' },
+        { label: 'К доплате клиентами', value: `+$${totalClientDue.toLocaleString()}`, subtext: 'Дополнительные соглашения', icon: '📈' },
+        { label: 'К возврату клиентам', value: `-$${totalClientRefund.toLocaleString()}`, subtext: 'Переплаты по обмеру БТИ', icon: '📉' }
+      ];
+    }
+
+    // Дефолтные показатели для некритических отчетов
     return [
       { label: 'Всего записей', value: activeReportData.length.toString(), subtext: 'В текущей таблице', icon: '📊' }
     ];
@@ -1624,8 +1935,8 @@ export default function ReportsClient({
             </div>
           )}
 
-          {/* Корпус - RPT-002 */}
-          {activeReportId === 'RPT-002' && (
+          {/* Корпус - RPT-002, RPT-015, RPT-016, RPT-017, RPT-020 */}
+          {(activeReportId === 'RPT-002' || activeReportId === 'RPT-015' || activeReportId === 'RPT-016' || activeReportId === 'RPT-017' || activeReportId === 'RPT-020') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Корпус</label>
               <select
@@ -1645,8 +1956,8 @@ export default function ReportsClient({
             </div>
           )}
 
-          {/* Тип помещения - RPT-002 */}
-          {activeReportId === 'RPT-002' && (
+          {/* Тип помещения - RPT-002, RPT-015, RPT-016, RPT-017, RPT-018 */}
+          {(activeReportId === 'RPT-002' || activeReportId === 'RPT-015' || activeReportId === 'RPT-016' || activeReportId === 'RPT-017' || activeReportId === 'RPT-018') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Тип помещения</label>
               <select
@@ -1788,6 +2099,122 @@ export default function ReportsClient({
                 <option value="week">Неделя</option>
                 <option value="month">Месяц</option>
                 <option value="quarter">Квартал</option>
+              </select>
+            </div>
+          )}
+
+          {/* Фильтры площади от/до — RPT-015, RPT-016, RPT-018 */}
+          {(activeReportId === 'RPT-015' || activeReportId === 'RPT-016' || activeReportId === 'RPT-018') && (
+            <>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Площадь от (м²)</label>
+                <input
+                  type="number"
+                  placeholder="Мин"
+                  className={styles.filterInput}
+                  value={minArea}
+                  onChange={e => setMinArea(e.target.value)}
+                />
+              </div>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Площадь до (м²)</label>
+                <input
+                  type="number"
+                  placeholder="Макс"
+                  className={styles.filterInput}
+                  value={maxArea}
+                  onChange={e => setMaxArea(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Фильтры цены от/до — RPT-015, RPT-018 */}
+          {(activeReportId === 'RPT-015' || activeReportId === 'RPT-018') && (
+            <>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Цена от ($)</label>
+                <input
+                  type="number"
+                  placeholder="Мин"
+                  className={styles.filterInput}
+                  value={minPrice}
+                  onChange={e => setMinPrice(e.target.value)}
+                />
+              </div>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Цена до ($)</label>
+                <input
+                  type="number"
+                  placeholder="Макс"
+                  className={styles.filterInput}
+                  value={maxPrice}
+                  onChange={e => setMaxPrice(e.target.value)}
+                />
+              </div>
+            </>
+          )}
+
+          {/* Фильтр этажа — RPT-018 */}
+          {activeReportId === 'RPT-018' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Этаж</label>
+              <input
+                type="number"
+                placeholder="Этаж"
+                className={styles.filterInput}
+                value={filterFloor}
+                onChange={e => setFilterFloor(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* Фильтр вида из окна — RPT-018 */}
+          {activeReportId === 'RPT-018' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Вид из окна</label>
+              <select
+                className={styles.filterInput}
+                value={filterView}
+                onChange={e => setFilterView(e.target.value)}
+              >
+                <option value="ALL">Любой вид</option>
+                <option value="Море">Море</option>
+                <option value="Горы">Горы</option>
+                <option value="Город">Город</option>
+                <option value="Двор">Двор</option>
+                <option value="Парк">Парк</option>
+              </select>
+            </div>
+          )}
+
+          {/* Фильтр номера квартиры — RPT-019, RPT-020 */}
+          {(activeReportId === 'RPT-019' || activeReportId === 'RPT-020') && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Номер квартиры</label>
+              <input
+                type="text"
+                placeholder="Номер"
+                className={styles.filterInput}
+                value={filterUnitNumber}
+                onChange={e => setFilterUnitNumber(e.target.value)}
+              />
+            </div>
+          )}
+
+          {/* Фильтр инициатора — RPT-019 */}
+          {activeReportId === 'RPT-019' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Инициатор</label>
+              <select
+                className={styles.filterInput}
+                value={filterInitiator}
+                onChange={e => setFilterInitiator(e.target.value)}
+              >
+                <option value="ALL">Все инициаторы</option>
+                {Array.from(new Set((initialData.priceHistory || []).map((r: any) => r.initiator).filter(Boolean))).map((init: any) => (
+                  <option key={init} value={init}>{init}</option>
+                ))}
               </select>
             </div>
           )}
