@@ -29,7 +29,9 @@ import {
   getProjectExposureReportData,
   getFreeUnitsSearchData,
   getPriceHistoryReportData,
-  getAreaDiscrepancyReportData
+  getAreaDiscrepancyReportData,
+  getVipClientsReportData,
+  getClientDossierReportData
 } from '@/app/actions/reports';
 import { getExchangeRate } from '@/app/actions/exchange';
 import ReportsClient from './ReportsClient';
@@ -43,12 +45,14 @@ export default async function ReportsPage({
   const token = searchParams.token || cookieStore.get('auth_token')?.value;
 
   let organizationId = 'default';
+  let userRole = 'manager';
 
   if (token) {
     try {
       const { payload } = await verifyToken(token);
       if (payload && typeof payload !== 'string') {
         organizationId = ((payload as any).app_metadata?.organization_id as string) || (payload.sub as string);
+        userRole = (payload.role as string) || 'manager';
       }
     } catch (e) {
       console.error('Token verification failed:', e);
@@ -79,6 +83,8 @@ export default async function ReportsPage({
   const freeUnitsSearch = await getFreeUnitsSearchData(organizationId);
   const priceHistory = await getPriceHistoryReportData(organizationId);
   const areaDiscrepancy = await getAreaDiscrepancyReportData(organizationId);
+  const vipClients = await getVipClientsReportData(organizationId);
+  const clientDossier = await getClientDossierReportData(organizationId);
 
   // Загружаем динамические справочники для фильтров
   const projects = await getProjectsList(organizationId);
@@ -94,6 +100,7 @@ export default async function ReportsPage({
   return (
     <ReportsClient
       organizationId={organizationId}
+      userRole={userRole}
       projects={projects}
       managers={managers}
       blocks={blocks}
@@ -124,7 +131,9 @@ export default async function ReportsPage({
         projectExposure,
         freeUnitsSearch,
         priceHistory,
-        areaDiscrepancy
+        areaDiscrepancy,
+        vipClients,
+        clientDossier
       }}
     />
   );
