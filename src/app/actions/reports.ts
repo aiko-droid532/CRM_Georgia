@@ -927,3 +927,243 @@ export async function getMortgageReportData(organizationId: string) {
     return [];
   }
 }
+
+// RPT-015: Остатки свободных помещений
+export async function getAvailableUnitsReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        u.id as "unitId",
+        u.number as "unitNumber",
+        p.id as "projectId",
+        p."nameRu" as "projectName",
+        b.number as "blockNumber",
+        u.floor as "floor",
+        u.area as "area",
+        u.price as "price",
+        u.type as "type"
+      FROM "Unit" u
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE u."organizationId" = ${organizationId} AND u.status = 'FREE'
+      ORDER BY p."nameRu" ASC, b.number ASC, u.number ASC
+    `;
+    return rawData.map(row => ({
+      unitId: row.unitId,
+      unitNumber: row.unitNumber,
+      projectId: row.projectId,
+      projectName: row.projectName,
+      blockNumber: row.blockNumber,
+      floor: row.floor,
+      area: row.area,
+      price: row.price,
+      type: row.type
+    }));
+  } catch (e) {
+    console.error('getAvailableUnitsReportData error:', e);
+    return [];
+  }
+}
+
+// RPT-016: Реализованные помещения
+export async function getSoldUnitsReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        u.id as "unitId",
+        u.number as "unitNumber",
+        p.id as "projectId",
+        p."nameRu" as "projectName",
+        b.id as "blockId",
+        b.number as "blockNumber",
+        u.floor as "floor",
+        u.area as "area",
+        u.type as "type",
+        COALESCE(d."totalAmount", u.price)::double precision as "soldPrice",
+        COALESCE(d."updatedAt", u."updatedAt") as "soldAt"
+      FROM "Unit" u
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      LEFT JOIN "Deal" d ON d."unitId" = u.id AND d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED')
+      WHERE p."organizationId" = ${organizationId} 
+        AND (u.status IN ('SOLD', 'DOWN_PAYMENT_RECEIVED') OR d.status IN ('SUCCESS', 'PAYMENT_CONFIRMED'))
+      ORDER BY "soldAt" DESC
+    `;
+    return rawData.map(row => ({
+      unitId: row.unitId,
+      unitNumber: row.unitNumber,
+      projectId: row.projectId,
+      projectName: row.projectName,
+      blockId: row.blockId,
+      blockNumber: row.blockNumber,
+      floor: row.floor,
+      area: row.area,
+      type: row.type,
+      soldPrice: row.soldPrice,
+      soldAt: row.soldAt ? row.soldAt.toISOString().split('T')[0] : null
+    }));
+  } catch (e) {
+    console.error('getSoldUnitsReportData error:', e);
+    return [];
+  }
+}
+
+// RPT-017: Экспозиция объектов
+export async function getProjectExposureReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        p.id as "projectId",
+        p."nameRu" as "projectName",
+        b.number as "blockNumber",
+        COUNT(*)::int as "totalUnits",
+        SUM(CASE WHEN u.status IN ('SOLD', 'DOWN_PAYMENT_RECEIVED') THEN 1 ELSE 0 END)::int as "soldUnits",
+        SUM(CASE WHEN u.status IN ('RESERVATION_PAID', 'RESERVATION_ORAL') THEN 1 ELSE 0 END)::int as "bookedUnits",
+        SUM(CASE WHEN u.status = 'FREE' THEN 1 ELSE 0 END)::int as "freeUnits"
+      FROM "Unit" u
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE p."organizationId" = ${organizationId}
+      GROUP BY p.id, p."nameRu", b.number
+      ORDER BY p."nameRu" ASC, b.number ASC
+    `;
+    return rawData.map(row => ({
+      projectId: row.projectId,
+      projectName: row.projectName,
+      blockNumber: row.blockNumber,
+      totalUnits: row.totalUnits,
+      soldUnits: row.soldUnits,
+      bookedUnits: row.bookedUnits,
+      freeUnits: row.freeUnits
+    }));
+  } catch (e) {
+    console.error('getProjectExposureReportData error:', e);
+    return [];
+  }
+}
+
+// RPT-018: Поиск свободных помещений
+export async function getFreeUnitsSearchData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        u.id as "unitId",
+        u.number as "unitNumber",
+        p.id as "projectId",
+        p."nameRu" as "projectName",
+        b.number as "blockNumber",
+        u.floor as "floor",
+        u.area as "area",
+        u.price as "price",
+        u.type as "type",
+        COALESCE(u."viewType", 'Не указан') as "viewType",
+        COALESCE(u.rooms, 1)::int as "rooms",
+        u."isVip" as "isVip"
+      FROM "Unit" u
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE u."organizationId" = ${organizationId} AND u.status = 'FREE'
+      ORDER BY u.price ASC
+    `;
+    return rawData.map(row => ({
+      unitId: row.unitId,
+      unitNumber: row.unitNumber,
+      projectId: row.projectId,
+      projectName: row.projectName,
+      blockNumber: row.blockNumber,
+      floor: row.floor,
+      area: row.area,
+      price: row.price,
+      type: row.type,
+      viewType: row.viewType,
+      rooms: row.rooms,
+      isVip: row.isVip
+    }));
+  } catch (e) {
+    console.error('getFreeUnitsSearchData error:', e);
+    return [];
+  }
+}
+
+// RPT-019: Журнал изменения цен (PriceHistory)
+export async function getPriceHistoryReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        ph.id as "historyId",
+        u.number as "unitNumber",
+        p.id as "projectId",
+        p."nameRu" as "projectName",
+        ph."oldPrice" as "oldPrice",
+        ph."newPrice" as "newPrice",
+        ph.currency as "currency",
+        ph."createdAt" as "createdAt",
+        COALESCE(ph.reason, 'Корректировка цены') as "reason",
+        COALESCE(ph."initiatorId", 'Не указан') as "initiator"
+      FROM "PriceHistory" ph
+      JOIN "Unit" u ON ph."unitId" = u.id
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE ph."organizationId" = ${organizationId}
+      ORDER BY ph."createdAt" DESC
+    `;
+    return rawData.map(row => ({
+      historyId: row.historyId,
+      unitNumber: row.unitNumber,
+      projectId: row.projectId,
+      projectName: row.projectName,
+      oldPrice: row.oldPrice,
+      newPrice: row.newPrice,
+      currency: row.currency,
+      createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
+      reason: row.reason,
+      initiator: row.initiator
+    }));
+  } catch (e) {
+    console.error('getPriceHistoryReportData error:', e);
+    return [];
+  }
+}
+
+// RPT-020: Отчёт по площадям (проектная vs фактическая)
+export async function getAreaDiscrepancyReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        u.id as "unitId",
+        u.number as "unitNumber",
+        p.id as "projectId",
+        p."nameRu" as "projectName",
+        b.number as "blockNumber",
+        u.area as "projectedArea",
+        COALESCE(u."actualArea", u.area)::double precision as "actualArea",
+        u.price as "price",
+        u.status::text as "status",
+        COALESCE((
+          SELECT d.id FROM "Deal" d 
+          WHERE d."unitId" = u.id AND d.status NOT IN ('FAILED', 'CANCELLED') 
+          LIMIT 1
+        ), 'Без сделки') as "dealId"
+      FROM "Unit" u
+      JOIN "Block" b ON u."blockId" = b.id
+      JOIN "Project" p ON b."projectId" = p.id
+      WHERE u."organizationId" = ${organizationId}
+      ORDER BY p."nameRu" ASC, b.number ASC, u.number ASC
+    `;
+    return rawData.map(row => ({
+      unitId: row.unitId,
+      unitNumber: row.unitNumber,
+      projectId: row.projectId,
+      projectName: row.projectName,
+      blockNumber: row.blockNumber,
+      projectedArea: row.projectedArea,
+      actualArea: row.actualArea,
+      price: row.price,
+      status: row.status,
+      dealId: row.dealId
+    }));
+  } catch (e) {
+    console.error('getAreaDiscrepancyReportData error:', e);
+    return [];
+  }
+}
