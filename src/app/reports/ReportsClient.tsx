@@ -1339,7 +1339,7 @@ export default function ReportsClient({
       activeReportData.forEach(row => {
         totalDiscountAmount += Number(row['Сумма скидки ($)']) || 0;
         totalBase += Number(row['Базовая цена ($)']) || 0;
-        const pct = parseFloat(row['Скидка (%)']) || 0;
+        const pct = parseFloat(row['Индивидуальная скидка (%)']) || 0;
         if (pct > maxDiscount) maxDiscount = pct;
       });
       const avgDiscount = totalBase > 0 ? ((totalDiscountAmount / totalBase) * 100).toFixed(1) + '%' : '—';
