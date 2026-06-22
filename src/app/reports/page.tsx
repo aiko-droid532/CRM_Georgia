@@ -22,8 +22,6 @@ import {
   getCohortAnalysisReportData,
   getDiscountReportData,
   getMortgageReportData,
-  getTaxInvoiceReportData,
-  getEscrowReportData,
   getAvailableUnitsReportData,
   getSoldUnitsReportData,
   getProjectExposureReportData,
@@ -71,8 +69,6 @@ export default async function ReportsPage({
   const cohortAnalysis = await getCohortAnalysisReportData(organizationId);
   const discountReport = await getDiscountReportData(organizationId);
   const mortgageReport = await getMortgageReportData(organizationId);
-  const taxInvoiceReport = await getTaxInvoiceReportData(organizationId);
-  const escrowReport = await getEscrowReportData(organizationId);
   const availableUnits = await getAvailableUnitsReportData(organizationId);
   const soldUnits = await getSoldUnitsReportData(organizationId);
   const projectExposure = await getProjectExposureReportData(organizationId);
@@ -117,8 +113,6 @@ export default async function ReportsPage({
         cohortAnalysis,
         discountReport,
         mortgageReport,
-        taxInvoiceReport,
-        escrowReport,
         availableUnits,
         soldUnits,
         projectExposure,

@@ -21,8 +21,8 @@ const REPORT_CATALOG = [
   { id: 'RPT-010', name: 'Сводный денежный поток', description: 'Прогноз поступлений по графику платежей и сопоставление с финансовым планом.', category: 'finance', isCritical: true },
   { id: 'RPT-011', name: 'Отчет по индивидуальным скидкам', description: 'Все скидки выше порогов (от 3%) с указанием инициатора, согласующего и маржинальности.', category: 'finance', isCritical: true },
   { id: 'RPT-012', name: 'Отчет по ипотечным сделкам', description: 'Сделки в рассрочку/ипотеку с разбивкой по банкам (TBC, BoG) и конверсией выдачи.', category: 'finance', isCritical: true },
-  { id: 'RPT-013', name: 'Отчет по выписанным e-invoice', description: 'Налоговые инвойсы, отправленные в систему RS.ge, и их текущие статусы.', category: 'finance', isCritical: true },
-  { id: 'RPT-014', name: 'Отчет по эскроу', description: 'Сделки со счетами эскроу. Депонированные и раскрытые суммы по этапам.', category: 'finance', isCritical: true },
+  { id: 'RPT-013', name: 'Отчет по выписанным e-invoice', description: 'Налоговые инвойсы, отправленные в систему RS.ge, и их текущие статусы.', category: 'finance', isCritical: false },
+  { id: 'RPT-014', name: 'Отчет по эскроу', description: 'Сделки со счетами эскроу. Депонированные и раскрытые суммы по этапам.', category: 'finance', isCritical: false },
 
   // 3. Объекты и остатки
   { id: 'RPT-015', name: 'Остатки помещений (Свободные)', description: 'Свободные квартиры по ЖК с детализацией по площадям, типам и ценам. Реестр Available.', category: 'units', isCritical: false },
@@ -80,8 +80,6 @@ interface ReportsClientProps {
     cohortAnalysis: any[];
     discountReport: any[];
     mortgageReport: any[];
-    taxInvoiceReport: any[];
-    escrowReport: any[];
     availableUnits: any[];
     soldUnits: any[];
     projectExposure: any[];
@@ -334,60 +332,15 @@ export default function ReportsClient({
           { 'Сделка': 'DEAL-9281', 'Клиент': 'Кайсар Бейсекбаев', 'Банк': 'ТБС Банк', 'Сумма ипотеки ($)': 450000, 'Статус одобрения': 'Одобрено банком' },
           { 'Сделка': 'DEAL-9051', 'Клиент': 'Смирнов Д.', 'Банк': 'Банк Грузии', 'Сумма ипотеки ($)': 310000, 'Статус одобрения': 'На рассмотрении' }
         ];
-      case 'RPT-013': { // Отчёт по e-invoice
-        const STATUS_LABELS: Record<string, string> = {
-          'SUCCESS': '✅ Успешно отправлен',
-          'PENDING': '⏳ Ожидает отправки',
-          'FAILED': '❌ Ошибка отправки',
-        };
-        const filtered = initialData.taxInvoiceReport.filter((row: any) => {
-          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          if (startDate && row.issuedAt < startDate) return false;
-          if (endDate && row.issuedAt > endDate) return false;
-          return true;
-        });
-        return filtered.map((row: any) => ({
-          'Номер инвойса': row.invoiceNumber,
-          'Сделка': row.dealId.startsWith('test') ? '#ТЕСТ' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
-          'Клиент': row.clientName,
-          'Квартира': `№${row.unitNumber}`,
-          'Сумма (GEL)': Math.round(row.amount),
-          'Валюта': row.currency,
-          'Дата выписки': row.issuedAt,
-          'Статус RS.ge': STATUS_LABELS[row.status] || row.status,
-        }));
-      }
-
-      case 'RPT-014': { // Отчёт по эскроу
-        const STATUS_LABELS: Record<string, string> = {
-          'ACTIVE': '🔒 Активен',
-          'RELEASED': '✅ Раскрыт',
-          'CLOSED': '📁 Закрыт',
-        };
-        const filtered = initialData.escrowReport.filter((row: any) => {
-          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          if (startDate && row.createdAt < startDate) return false;
-          if (endDate && row.createdAt > endDate) return false;
-          return true;
-        });
-        return filtered.map((row: any) => {
-          const releasePct = row.depositedAmount > 0
-            ? ((row.releasedAmount / row.depositedAmount) * 100).toFixed(1) + '%'
-            : '0%';
-          return {
-            'Сделка': row.dealId.startsWith('test') ? '#ТЕСТ' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
-            'Клиент': row.clientName,
-            'Квартира': `№${row.unitNumber}`,
-            'Банк-депозитарий': row.bankName,
-            'Депонировано ($)': Math.round(row.depositedAmount),
-            'Раскрыто ($)': Math.round(row.releasedAmount),
-            'Остаток ($)': Math.round(row.remainingAmount),
-            'Раскрыто (%)': releasePct,
-            'Этап раскрытия': row.releaseStage,
-            'Статус': STATUS_LABELS[row.status] || row.status,
-          };
-        });
-      }
+      case 'RPT-013':
+        return [
+          { 'Номер инвойса': 'INV-2026-0041', 'Клиент': 'Кайсар Бейсекбаев', 'Дата выписки': today, 'Сумма (GEL)': 245000, 'Статус RS.ge': 'Успешно отправлен' },
+          { 'Номер инвойса': 'INV-2026-0042', 'Клиент': 'Аслан Ислямов', 'Дата выписки': today, 'Сумма (GEL)': 110000, 'Статус RS.ge': 'Успешно отправлен' }
+        ];
+      case 'RPT-014':
+        return [
+          { 'Сделка': 'DEAL-8991', 'Клиент': 'Оганесян Г.', 'Банк-депозитарий': 'ТБС Банк', 'Сумма на эскроу ($)': 145000, 'Этап раскрытия': 'Каркас здания завершен (30% раскрыто)' }
+        ];
       case 'RPT-015':
         return [
           { 'Квартира': '№102', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 3, 'Статус': 'Свободно', 'Цена ($)': 97000 },
@@ -711,14 +664,14 @@ export default function ReportsClient({
           if (selectedManager !== 'ALL' && row.managerName !== selectedManager) return false;
           if (startDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) < startDate) return false;
           if (endDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) > endDate) return false;
-
+          
           let status = 'IN_PROGRESS';
           if (row.draftApprovedAt) {
             status = 'APPROVED';
           } else if (row.currentDealStatus === 'FAILED' || row.currentDealStatus === 'CANCELLED') {
             status = 'REJECTED';
           }
-
+          
           if (draftStatusFilter !== 'ALL' && status !== draftStatusFilter) return false;
           return true;
         });
@@ -755,7 +708,7 @@ export default function ReportsClient({
           if (!dateStr) return 'unknown';
           const d = new Date(dateStr);
           if (isNaN(d.getTime())) return 'unknown';
-
+          
           if (dynamicsInterval === 'day') {
             return dateStr.substring(0, 10);
           }
@@ -781,7 +734,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && l.projectId !== selectedProject) return;
           if (startDate && l.createdAt && l.createdAt.substring(0, 10) < startDate) return;
           if (endDate && l.createdAt && l.createdAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(l.createdAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -794,7 +747,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && v.projectId !== selectedProject) return;
           if (startDate && v.visitedAt && v.visitedAt.substring(0, 10) < startDate) return;
           if (endDate && v.visitedAt && v.visitedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(v.visitedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -807,7 +760,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && a.projectId !== selectedProject) return;
           if (startDate && a.appliedAt && a.appliedAt.substring(0, 10) < startDate) return;
           if (endDate && a.appliedAt && a.appliedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(a.appliedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -820,7 +773,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && b.projectId !== selectedProject) return;
           if (startDate && b.createdAt && b.createdAt.substring(0, 10) < startDate) return;
           if (endDate && b.createdAt && b.createdAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(b.createdAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -833,7 +786,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && c.projectId !== selectedProject) return;
           if (startDate && c.signedAt && c.signedAt.substring(0, 10) < startDate) return;
           if (endDate && c.signedAt && c.signedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(c.signedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -847,7 +800,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && p.projectId !== selectedProject) return;
           if (startDate && p.paidAt && p.paidAt.substring(0, 10) < startDate) return;
           if (endDate && p.paidAt && p.paidAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(p.paidAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -892,7 +845,7 @@ export default function ReportsClient({
           if (!dateStr) return 'unknown';
           const d = new Date(dateStr);
           if (isNaN(d.getTime())) return 'unknown';
-
+          
           if (cohortInterval === 'week') {
             const day = d.getDay();
             const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -917,19 +870,19 @@ export default function ReportsClient({
           if (endDate && row.leadCreatedAt && row.leadCreatedAt.substring(0, 10) > endDate) return;
           if (selectedSource !== 'ALL' && row.source !== selectedSource) return;
           if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return;
-
+          
           const key = getCohortKey(row.leadCreatedAt);
           if (key === 'unknown') return;
           if (!cohorts[key]) {
             cohorts[key] = { totalLeads: 0, wonDeals: 0, totalRevenue: 0, totalCycleDays: 0 };
           }
           cohorts[key].totalLeads += 1;
-
+          
           const isWon = row.dealStatus === 'SUCCESS' || row.dealStatus === 'PAYMENT_CONFIRMED';
           if (isWon) {
             cohorts[key].wonDeals += 1;
             cohorts[key].totalRevenue += row.price || 0;
-
+            
             if (row.leadCreatedAt && row.dealUpdatedAt) {
               const leadDate = new Date(row.leadCreatedAt);
               const dealDate = new Date(row.dealUpdatedAt);
@@ -962,7 +915,7 @@ export default function ReportsClient({
             const avgCheck = data.wonDeals > 0 ? Math.round(data.totalRevenue / data.wonDeals) : 0;
             const conversion = data.totalLeads > 0 ? ((data.wonDeals / data.totalLeads) * 100).toFixed(1) + '%' : '0.0%';
             const avgCycle = data.wonDeals > 0 ? Math.round(data.totalCycleDays / data.wonDeals) : 0;
-
+            
             return {
               'Когорта': formatCohortLabel(key),
               'Клиентов в когорте': data.totalLeads,
@@ -1316,7 +1269,7 @@ export default function ReportsClient({
           const actual = row.actualArea || projected;
           const diff = parseFloat((actual - projected).toFixed(2));
           const diffStr = diff > 0 ? `+${diff}` : `${diff}`;
-
+          
           let compensationStatus = 'Расхождений нет';
           if (diff > 0) {
             const sqPrice = row.price / (projected || 1);
@@ -1723,40 +1676,6 @@ export default function ReportsClient({
         { label: 'Проверено квартир', value: totalUnits.toString(), subtext: `С расхождениями БТИ: ${discrepancyCount}`, icon: '🏢' },
         { label: 'К доплате клиентами', value: `+$${totalClientDue.toLocaleString()}`, subtext: 'Дополнительные соглашения', icon: '📈' },
         { label: 'К возврату клиентам', value: `-$${totalClientRefund.toLocaleString()}`, subtext: 'Переплаты по обмеру БТИ', icon: '📉' }
-      ];
-    }
-
-    if (activeReportId === 'RPT-013') {
-      let totalAmount = 0, success = 0, pending = 0, failed = 0;
-      activeReportData.forEach(row => {
-        totalAmount += Number(row['Сумма (GEL)']) || 0;
-        const status = row['Статус RS.ge'] || '';
-        if (status.includes('Успешно')) success++;
-        if (status.includes('Ожидает')) pending++;
-        if (status.includes('Ошибка')) failed++;
-      });
-      return [
-        { label: 'Всего инвойсов', value: activeReportData.length.toString(), subtext: `✅ ${success} | ⏳ ${pending} | ❌ ${failed}`, icon: '🧾' },
-        { label: 'Общая сумма', value: `₾${totalAmount.toLocaleString()}`, subtext: 'По всем выписанным инвойсам', icon: '💴' },
-        { label: 'Успешно отправлено', value: `${activeReportData.length > 0 ? ((success / activeReportData.length) * 100).toFixed(0) : 0}%`, subtext: `${success} из ${activeReportData.length} инвойсов`, icon: '✅' },
-      ];
-    }
-
-    if (activeReportId === 'RPT-014') {
-      let totalDeposited = 0, totalReleased = 0, activeCount = 0, releasedCount = 0;
-      activeReportData.forEach(row => {
-        totalDeposited += Number(row['Депонировано ($)']) || 0;
-        totalReleased += Number(row['Раскрыто ($)']) || 0;
-        if (row['Статус']?.includes('Активен')) activeCount++;
-        if (row['Статус']?.includes('Раскрыт')) releasedCount++;
-      });
-      const releasePct = totalDeposited > 0
-        ? ((totalReleased / totalDeposited) * 100).toFixed(1) + '%'
-        : '0%';
-      return [
-        { label: 'Эскроу счетов', value: activeReportData.length.toString(), subtext: `🔒 Активных: ${activeCount} | ✅ Раскрытых: ${releasedCount}`, icon: '🏦' },
-        { label: 'Депонировано', value: `$${totalDeposited.toLocaleString()}`, subtext: 'Общая сумма на счетах', icon: '💰' },
-        { label: 'Раскрыто', value: `$${totalReleased.toLocaleString()}`, subtext: `${releasePct} от общей суммы`, icon: '🔓' },
       ];
     }
 
