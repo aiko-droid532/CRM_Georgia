@@ -379,60 +379,6 @@ export default function ReportsClient({
           { 'Когорта': '2026-04 (Апр)', 'Клиентов в когорте': 95, 'Средний чек ($)': 115000, 'Конверсия в Won': '8.4%', 'Ср. цикл сделки (дн)': 16 },
           { 'Когорта': '2026-03 (Март)', 'Клиентов в когорте': 80, 'Средний чек ($)': 125000, 'Конверсия в Won': '10.0%', 'Ср. цикл сделки (дн)': 12 }
         ];
-      case 'RPT-013': { // Отчёт по e-invoice
-        const STATUS_LABELS: Record<string, string> = {
-          'SUCCESS': '✅ Успешно отправлен',
-          'PENDING': '⏳ Ожидает отправки',
-          'FAILED': '❌ Ошибка отправки',
-        };
-        const filtered = initialData.taxInvoiceReport.filter((row: any) => {
-          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          if (startDate && row.issuedAt < startDate) return false;
-          if (endDate && row.issuedAt > endDate) return false;
-          return true;
-        });
-        return filtered.map((row: any) => ({
-          'Номер инвойса': row.invoiceNumber,
-          'Сделка': row.dealId.startsWith('test') ? '#ТЕСТ' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
-          'Клиент': row.clientName,
-          'Квартира': `№${row.unitNumber}`,
-          'Сумма (GEL)': Math.round(row.amount),
-          'Валюта': row.currency,
-          'Дата выписки': row.issuedAt,
-          'Статус RS.ge': STATUS_LABELS[row.status] || row.status,
-        }));
-      }
-
-      case 'RPT-014': { // Отчёт по эскроу
-        const STATUS_LABELS: Record<string, string> = {
-          'ACTIVE': '🔒 Активен',
-          'RELEASED': '✅ Раскрыт',
-          'CLOSED': '📁 Закрыт',
-        };
-        const filtered = initialData.escrowReport.filter((row: any) => {
-          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          if (startDate && row.createdAt < startDate) return false;
-          if (endDate && row.createdAt > endDate) return false;
-          return true;
-        });
-        return filtered.map((row: any) => {
-          const releasePct = row.depositedAmount > 0
-            ? ((row.releasedAmount / row.depositedAmount) * 100).toFixed(1) + '%'
-            : '0%';
-          return {
-            'Сделка': row.dealId.startsWith('test') ? '#ТЕСТ' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
-            'Клиент': row.clientName,
-            'Квартира': `№${row.unitNumber}`,
-            'Банк-депозитарий': row.bankName,
-            'Депонировано ($)': Math.round(row.depositedAmount),
-            'Раскрыто ($)': Math.round(row.releasedAmount),
-            'Остаток ($)': Math.round(row.remainingAmount),
-            'Раскрыто (%)': releasePct,
-            'Этап раскрытия': row.releaseStage,
-            'Статус': STATUS_LABELS[row.status] || row.status,
-          };
-        });
-      }
       case 'RPT-015':
         return [
           { 'Квартира': '№102', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 3, 'Статус': 'Свободно', 'Цена ($)': 97000 },
@@ -1223,6 +1169,61 @@ export default function ReportsClient({
         }));
       }
 
+      case 'RPT-013': { // Отчёт по e-invoice
+        const invoiceStatusLabels: Record<string, string> = {
+          'SUCCESS': '✅ Успешно отправлен',
+          'PENDING': '⏳ Ожидает отправки',
+          'FAILED': '❌ Ошибка отправки',
+        };
+        const filtered = initialData.taxInvoiceReport.filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (startDate && row.issuedAt < startDate) return false;
+          if (endDate && row.issuedAt > endDate) return false;
+          return true;
+        });
+        return filtered.map((row: any) => ({
+          'Номер инвойса': row.invoiceNumber,
+          'Сделка': row.dealId.startsWith('test') ? '#ТЕСТ' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
+          'Клиент': row.clientName,
+          'Квартира': `№${row.unitNumber}`,
+          'Сумма (GEL)': Math.round(row.amount),
+          'Валюта': row.currency,
+          'Дата выписки': row.issuedAt,
+          'Статус RS.ge': invoiceStatusLabels[row.status] || row.status,
+        }));
+      }
+
+      case 'RPT-014': { // Отчёт по эскроу
+        const escrowStatusLabels: Record<string, string> = {
+          'ACTIVE': '🔒 Активен',
+          'RELEASED': '✅ Раскрыт',
+          'CLOSED': '📁 Закрыт',
+        };
+        const filtered = initialData.escrowReport.filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (startDate && row.createdAt < startDate) return false;
+          if (endDate && row.createdAt > endDate) return false;
+          return true;
+        });
+        return filtered.map((row: any) => {
+          const releasePct = row.depositedAmount > 0
+            ? ((row.releasedAmount / row.depositedAmount) * 100).toFixed(1) + '%'
+            : '0%';
+          return {
+            'Сделка': row.dealId.startsWith('test') ? '#ТЕСТ' : `#${row.dealId.substring(0, 8).toUpperCase()}`,
+            'Клиент': row.clientName,
+            'Квартира': `№${row.unitNumber}`,
+            'Банк-депозитарий': row.bankName,
+            'Депонировано ($)': Math.round(row.depositedAmount),
+            'Раскрыто ($)': Math.round(row.releasedAmount),
+            'Остаток ($)': Math.round(row.remainingAmount),
+            'Раскрыто (%)': releasePct,
+            'Этап раскрытия': row.releaseStage,
+            'Статус': escrowStatusLabels[row.status] || row.status,
+          };
+        });
+      }
+
       case 'RPT-015': { // Остатки свободных помещений
         const filtered = (initialData.availableUnits || []).filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
@@ -1667,7 +1668,7 @@ export default function ReportsClient({
       return [
         { label: 'Получено (прошлые периоды)', value: `$${totalPaid.toLocaleString()}`, subtext: `План: $${pastScheduled.toLocaleString()} | Исполнение: ${execution}`, icon: '✅' },
         { label: 'Ожидается (будущие периоды)', value: `$${futureScheduled.toLocaleString()}`, subtext: 'По графику платежей', icon: '🔮' },
-        { label: 'Итого по графику', value: `$${(pastScheduled + futureScheduled).toLocaleString()}`, subtext: 'За весь выбранный период', icon: '📅' },
+        { label: 'Итого по графику', value: `$${(totalPaid + futureScheduled).toLocaleString()}`, subtext: 'Факт + прогноз будущих', icon: '📅' },
       ];
     }
 
@@ -1690,8 +1691,8 @@ export default function ReportsClient({
     if (activeReportId === 'RPT-012') {
       let totalLoan = 0, approved = 0, pending = 0, rejected = 0;
       activeReportData.forEach(row => {
-        totalLoan += Number(row['Сумма ипотеки ($)']) || 0;
-        const status = row['Статус заявки'] || '';
+        totalLoan += Number(row['Сумма кредита ($)']) || 0;
+        const status = row['Статус ипотеки'] || '';
         if (status.includes('Одобрено')) approved++;
         if (status.includes('рассмотрении')) pending++;
         if (status.includes('Отказ')) rejected++;
