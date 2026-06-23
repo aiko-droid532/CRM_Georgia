@@ -329,24 +329,73 @@ export async function getDebtorsRegistryData(organizationId: string) {
 export async function getManagerKpiData(organizationId: string) {
   try {
     const rawData: any[] = await prisma.$queryRaw`
+      -- Won/Lost Deals
       SELECT 
-        d.id as "dealId",
+        'deal' as "eventType",
+        d.id as "id",
         COALESCE(d."managerId", 'Не назначен') as "managerId",
         b."projectId" as "projectId",
         d."createdAt" as "createdAt",
-        d.status::text as "status"
+        d.status::text as "status",
+        COALESCE(d."totalAmount", 0)::double precision as "totalAmount",
+        COALESCE(EXTRACT(EPOCH FROM (d."updatedAt" - l."createdAt"))/86400, 0)::double precision as "cycleTime"
       FROM "Deal" d
+      LEFT JOIN "Lead" l ON d."leadId" = l.id
       LEFT JOIN "Unit" u ON d."unitId" = u.id
       LEFT JOIN "Block" b ON u."blockId" = b.id
       WHERE d."organizationId" = ${organizationId}
+
+      UNION ALL
+
+      -- Bookings
+      SELECT 
+        'booking' as "eventType",
+        bk.id as "id",
+        COALESCE(l."managerId", 'Не назначен') as "managerId",
+        bl."projectId" as "projectId",
+        bk."createdAt" as "createdAt",
+        bk.status as "status",
+        0 as "totalAmount",
+        0 as "cycleTime"
+      FROM "Booking" bk
+      JOIN "Lead" l ON bk."leadId" = l.id
+      JOIN "Unit" u ON bk."unitId" = u.id
+      JOIN "Block" bl ON u."blockId" = bl.id
+      WHERE bk."organizationId" = ${organizationId}
+
+      UNION ALL
+
+      -- Calls and Meetings from AuditLog
+      SELECT 
+        CASE 
+          WHEN al."newValue" = 'CONSULTATION' THEN 'meeting'
+          ELSE 'call'
+        END as "eventType",
+        al.id as "id",
+        COALESCE(d."managerId", 'Не назначен') as "managerId",
+        b."projectId" as "projectId",
+        al."createdAt" as "createdAt",
+        al."newValue" as "status",
+        0 as "totalAmount",
+        0 as "cycleTime"
+      FROM "AuditLog" al
+      JOIN "Deal" d ON al."entityId" = d.id AND al."entityType" = 'Deal'
+      LEFT JOIN "Unit" u ON d."unitId" = u.id
+      LEFT JOIN "Block" b ON u."blockId" = b.id
+      WHERE al."fieldName" = 'status' 
+        AND al."newValue" IN ('CALL', 'SECOND_CALL', 'THIRD_CALL', 'CONSULTATION')
+        AND d."organizationId" = ${organizationId}
     `;
 
     return rawData.map(row => ({
-      dealId: row.dealId,
+      eventType: row.eventType,
+      id: row.id,
       managerId: row.managerId,
       projectId: row.projectId,
       createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
-      status: row.status
+      status: row.status,
+      totalAmount: row.totalAmount,
+      cycleTime: row.cycleTime
     }));
   } catch (e) {
     console.error('getManagerKpiData error:', e);
@@ -359,32 +408,58 @@ export async function getMarketingChannelsData(organizationId: string) {
   try {
     const rawData: any[] = await prisma.$queryRaw`
       SELECT 
-        d.id as "dealId",
+        l.id as "leadId",
         COALESCE(l.source, 'Не указан') as "source",
-        b."projectId" as "projectId",
+        COALESCE(b."projectId", l."interestedProjectId") as "projectId",
         p."nameRu" as "projectName",
-        d."createdAt" as "createdAt",
-        d.status::text as "status",
+        l."createdAt" as "createdAt",
+        d.id as "dealId",
+        d.status::text as "dealStatus",
         COALESCE(u.price, 0)::double precision as "price"
-      FROM "Deal" d
-      JOIN "Lead" l ON d."leadId" = l.id
+      FROM "Lead" l
+      LEFT JOIN "Deal" d ON d."leadId" = l.id
       LEFT JOIN "Unit" u ON d."unitId" = u.id
       LEFT JOIN "Block" b ON u."blockId" = b.id
-      LEFT JOIN "Project" p ON b."projectId" = p.id
-      WHERE d."organizationId" = ${organizationId}
+      LEFT JOIN "Project" p ON COALESCE(b."projectId", l."interestedProjectId") = p.id
+      WHERE l."organizationId" = ${organizationId}
     `;
 
-    return rawData.map(row => ({
-      dealId: row.dealId,
-      source: row.source,
-      projectId: row.projectId,
-      createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
-      status: row.status,
-      price: convertPrice(row.price, row.projectName)
-    }));
+    const rawCosts: any[] = await prisma.$queryRaw`
+      SELECT 
+        id,
+        source,
+        channel,
+        cost,
+        "startDate",
+        "endDate",
+        "projectId"
+      FROM "MarketingCost"
+      WHERE "organizationId" = ${organizationId}
+    `;
+
+    return {
+      channels: rawData.map(row => ({
+        leadId: row.leadId,
+        source: row.source,
+        projectId: row.projectId,
+        createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
+        dealId: row.dealId,
+        dealStatus: row.dealStatus,
+        price: convertPrice(row.price, row.projectName)
+      })),
+      costs: rawCosts.map(row => ({
+        id: row.id,
+        source: row.source,
+        channel: row.channel,
+        cost: Number(row.cost) || 0,
+        startDate: row.startDate ? (row.startDate instanceof Date ? row.startDate.toISOString().split('T')[0] : String(row.startDate).split('T')[0]) : null,
+        endDate: row.endDate ? (row.endDate instanceof Date ? row.endDate.toISOString().split('T')[0] : String(row.endDate).split('T')[0]) : null,
+        projectId: row.projectId
+      }))
+    };
   } catch (e) {
     console.error('getMarketingChannelsData error:', e);
-    return [];
+    return { channels: [], costs: [] };
   }
 }
 
@@ -1109,7 +1184,7 @@ export async function getPriceHistoryReportData(organizationId: string) {
       WHERE ph."organizationId" = ${organizationId}
       ORDER BY ph."createdAt" DESC
     `;
-    return rawData.map(row => ({
+        return rawData.map(row => ({
       historyId: row.historyId,
       unitNumber: row.unitNumber,
       projectId: row.projectId,
@@ -1369,6 +1444,50 @@ export async function getEscrowReportData(organizationId: string) {
     }));
   } catch (e) {
     console.error('getEscrowReportData error:', e);
+    return [];
+  }
+}
+
+// RPT-025: Отчет по броням
+export async function getBookingReportData(organizationId: string) {
+  try {
+    const rawData: any[] = await prisma.$queryRaw`
+      SELECT 
+        bk.id as "bookingId",
+        bk.type as "type",
+        bk.status as "status",
+        COALESCE(bk."depositAmount", 0)::double precision as "depositAmount",
+        bk."createdAt" as "createdAt",
+        bk."expiresAt" as "expiresAt",
+        l.name as "clientName",
+        u.number as "unitNumber",
+        p."nameRu" as "projectName",
+        p.id as "projectId",
+        COALESCE(l."managerId", 'Не назначен') as "managerId"
+      FROM "Booking" bk
+      JOIN "Lead" l ON bk."leadId" = l.id
+      JOIN "Unit" u ON bk."unitId" = u.id
+      JOIN "Block" bl ON u."blockId" = bl.id
+      JOIN "Project" p ON bl."projectId" = p.id
+      WHERE bk."organizationId" = ${organizationId}
+      ORDER BY bk."createdAt" DESC
+    `;
+
+    return rawData.map(row => ({
+      bookingId: row.bookingId,
+      type: row.type || 'SOFT',
+      status: row.status || 'ACTIVE',
+      depositAmount: row.depositAmount,
+      createdAt: row.createdAt ? row.createdAt.toISOString().split('T')[0] : null,
+      expiresAt: row.expiresAt ? row.expiresAt.toISOString().split('T')[0] : null,
+      clientName: row.clientName,
+      unitNumber: row.unitNumber,
+      projectName: row.projectName || 'Без проекта',
+      projectId: row.projectId,
+      managerId: row.managerId
+    }));
+  } catch (e) {
+    console.error('getBookingReportData error:', e);
     return [];
   }
 }
