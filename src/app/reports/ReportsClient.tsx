@@ -45,7 +45,8 @@ const REPORT_CATALOG = [
 const IMPLEMENTED_REPORTS = [
   'RPT-001', 'RPT-002', 'RPT-003', 'RPT-004', 'RPT-005', 'RPT-006', 'RPT-007',
   'RPT-008', 'RPT-009', 'RPT-010', 'RPT-011', 'RPT-012', 'RPT-013', 'RPT-014',
-  'RPT-015', 'RPT-016', 'RPT-017', 'RPT-018', 'RPT-019', 'RPT-020', 'RPT-021', 'RPT-022', 'RPT-023', 'RPT-024'
+  'RPT-015', 'RPT-016', 'RPT-017', 'RPT-018', 'RPT-019', 'RPT-020', 'RPT-021',
+  'RPT-022', 'RPT-023', 'RPT-024', 'RPT-025'
 ];
 
 const CATEGORIES = [
@@ -75,7 +76,7 @@ interface ReportsClientProps {
     debtors: any[];
     cashFlowReport: any[];
     managerKpi: any[];
-    marketingChannels: any[];
+    marketingChannels: any;
     contractDrafts: any[];
     salesDynamics: { leads: any[]; bookings: any[]; contracts: any[]; payments: any[]; visits: any[]; applications: any[] };
     cohortAnalysis: any[];
@@ -92,6 +93,8 @@ interface ReportsClientProps {
     areaDiscrepancy: any[];
     vipClients: any[];
     clientDossier: any[];
+
+    bookingReport: any[];
 
   };
   usdRate?: number;
@@ -319,6 +322,9 @@ export default function ReportsClient({
   const [filterInitiator, setFilterInitiator] = useState('ALL');
   const [dealStatusFilter, setDealStatusFilter] = useState('ALL');
 
+  const [selectedBookingType, setSelectedBookingType] = useState('ALL');
+
+
 
   // Стейт для «Сформировать» — таблица и KPI-карточки показываются после нажатия
   const [reportGenerated, setReportGenerated] = useState(false);
@@ -395,6 +401,8 @@ export default function ReportsClient({
           { 'Когорта': '2026-04 (Апр)', 'Клиентов в когорте': 95, 'Средний чек ($)': 115000, 'Конверсия в Won': '8.4%', 'Ср. цикл сделки (дн)': 16 },
           { 'Когорта': '2026-03 (Март)', 'Клиентов в когорте': 80, 'Средний чек ($)': 125000, 'Конверсия в Won': '10.0%', 'Ср. цикл сделки (дн)': 12 }
         ];
+
+
       case 'RPT-015':
         return [
           { 'Квартира': '№102', 'ЖК': 'Skyline Residence', 'Корпус': 'Литера А', 'Площадь (м²)': 48.5, 'Этаж': 3, 'Статус': 'Свободно', 'Цена ($)': 97000 },
@@ -718,14 +726,14 @@ export default function ReportsClient({
           if (selectedManager !== 'ALL' && row.managerName !== selectedManager) return false;
           if (startDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) < startDate) return false;
           if (endDate && row.draftCreatedAt && row.draftCreatedAt.substring(0, 10) > endDate) return false;
-
+          
           let status = 'IN_PROGRESS';
           if (row.draftApprovedAt) {
             status = 'APPROVED';
           } else if (row.currentDealStatus === 'FAILED' || row.currentDealStatus === 'CANCELLED') {
             status = 'REJECTED';
           }
-
+          
           if (draftStatusFilter !== 'ALL' && status !== draftStatusFilter) return false;
           return true;
         });
@@ -762,7 +770,7 @@ export default function ReportsClient({
           if (!dateStr) return 'unknown';
           const d = new Date(dateStr);
           if (isNaN(d.getTime())) return 'unknown';
-
+          
           if (dynamicsInterval === 'day') {
             return dateStr.substring(0, 10);
           }
@@ -788,7 +796,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && l.projectId !== selectedProject) return;
           if (startDate && l.createdAt && l.createdAt.substring(0, 10) < startDate) return;
           if (endDate && l.createdAt && l.createdAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(l.createdAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -801,7 +809,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && v.projectId !== selectedProject) return;
           if (startDate && v.visitedAt && v.visitedAt.substring(0, 10) < startDate) return;
           if (endDate && v.visitedAt && v.visitedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(v.visitedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -814,7 +822,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && a.projectId !== selectedProject) return;
           if (startDate && a.appliedAt && a.appliedAt.substring(0, 10) < startDate) return;
           if (endDate && a.appliedAt && a.appliedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(a.appliedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -827,7 +835,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && b.projectId !== selectedProject) return;
           if (startDate && b.createdAt && b.createdAt.substring(0, 10) < startDate) return;
           if (endDate && b.createdAt && b.createdAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(b.createdAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -840,7 +848,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && c.projectId !== selectedProject) return;
           if (startDate && c.signedAt && c.signedAt.substring(0, 10) < startDate) return;
           if (endDate && c.signedAt && c.signedAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(c.signedAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -854,7 +862,7 @@ export default function ReportsClient({
           if (selectedProject !== 'ALL' && p.projectId !== selectedProject) return;
           if (startDate && p.paidAt && p.paidAt.substring(0, 10) < startDate) return;
           if (endDate && p.paidAt && p.paidAt.substring(0, 10) > endDate) return;
-
+          
           const key = getIntervalKey(p.paidAt);
           if (key === 'unknown') return;
           if (!groups[key]) {
@@ -899,7 +907,7 @@ export default function ReportsClient({
           if (!dateStr) return 'unknown';
           const d = new Date(dateStr);
           if (isNaN(d.getTime())) return 'unknown';
-
+          
           if (cohortInterval === 'week') {
             const day = d.getDay();
             const diff = d.getDate() - day + (day === 0 ? -6 : 1);
@@ -924,19 +932,19 @@ export default function ReportsClient({
           if (endDate && row.leadCreatedAt && row.leadCreatedAt.substring(0, 10) > endDate) return;
           if (selectedSource !== 'ALL' && row.source !== selectedSource) return;
           if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return;
-
+          
           const key = getCohortKey(row.leadCreatedAt);
           if (key === 'unknown') return;
           if (!cohorts[key]) {
             cohorts[key] = { totalLeads: 0, wonDeals: 0, totalRevenue: 0, totalCycleDays: 0 };
           }
           cohorts[key].totalLeads += 1;
-
+          
           const isWon = row.dealStatus === 'SUCCESS' || row.dealStatus === 'PAYMENT_CONFIRMED';
           if (isWon) {
             cohorts[key].wonDeals += 1;
             cohorts[key].totalRevenue += row.price || 0;
-
+            
             if (row.leadCreatedAt && row.dealUpdatedAt) {
               const leadDate = new Date(row.leadCreatedAt);
               const dealDate = new Date(row.dealUpdatedAt);
@@ -969,7 +977,7 @@ export default function ReportsClient({
             const avgCheck = data.wonDeals > 0 ? Math.round(data.totalRevenue / data.wonDeals) : 0;
             const conversion = data.totalLeads > 0 ? ((data.wonDeals / data.totalLeads) * 100).toFixed(1) + '%' : '0.0%';
             const avgCycle = data.wonDeals > 0 ? Math.round(data.totalCycleDays / data.wonDeals) : 0;
-
+            
             return {
               'Когорта': formatCohortLabel(key),
               'Клиентов в когорте': data.totalLeads,
@@ -1075,68 +1083,159 @@ export default function ReportsClient({
       }
 
       case 'RPT-023': { // Эффективность менеджеров
-        const filtered = initialData.managerKpi.filter((row: any) => {
+        const filtered = (initialData.managerKpi || []).filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
           if (startDate && row.createdAt && row.createdAt < startDate) return false;
           if (endDate && row.createdAt && row.createdAt > endDate) return false;
           return true;
         });
 
-        const managersMap: Record<string, { total: number; won: number; lost: number }> = {};
+        const managersMap: Record<string, { calls: number; meetings: number; bookings: number; wonDeals: number; totalDeals: number; totalRevenue: number; cycleTimes: number[] }> = {};
         filtered.forEach((row: any) => {
-          if (!managersMap[row.managerId]) {
-            managersMap[row.managerId] = { total: 0, won: 0, lost: 0 };
+          const mgr = row.managerId;
+          if (!managersMap[mgr]) {
+            managersMap[mgr] = { calls: 0, meetings: 0, bookings: 0, wonDeals: 0, totalDeals: 0, totalRevenue: 0, cycleTimes: [] };
           }
-          managersMap[row.managerId].total += 1;
-          if (row.status === 'SUCCESS') managersMap[row.managerId].won += 1;
-          if (row.status === 'FAILED') managersMap[row.managerId].lost += 1;
+
+          if (row.eventType === 'call') {
+            managersMap[mgr].calls += 1;
+          } else if (row.eventType === 'meeting') {
+            managersMap[mgr].meetings += 1;
+          } else if (row.eventType === 'booking') {
+            managersMap[mgr].bookings += 1;
+          } else if (row.eventType === 'deal') {
+            managersMap[mgr].totalDeals += 1;
+            const isWon = ['SUCCESS', 'PAYMENT_CONFIRMED', 'CONTRACT'].includes(row.status);
+            if (isWon) {
+              managersMap[mgr].wonDeals += 1;
+              managersMap[mgr].totalRevenue += Number(row.totalAmount) || 0;
+              if (row.cycleTime && Number(row.cycleTime) > 0) {
+                managersMap[mgr].cycleTimes.push(Number(row.cycleTime));
+              }
+            }
+          }
         });
 
         return Object.entries(managersMap).map(([managerId, stats]) => {
-          const conversion = stats.total > 0 ? parseFloat(((stats.won / stats.total) * 100).toFixed(1)) : 0;
+          const conversion = stats.totalDeals > 0 
+            ? parseFloat(((stats.wonDeals / stats.totalDeals) * 100).toFixed(1)) 
+            : 0;
+          const avgCheck = stats.wonDeals > 0 
+            ? Math.round(stats.totalRevenue / stats.wonDeals) 
+            : 0;
+          const avgCycle = stats.cycleTimes.length > 0
+            ? Math.round(stats.cycleTimes.reduce((a: number, b: number) => a + b, 0) / stats.cycleTimes.length)
+            : 0;
+
           return {
             'Менеджер': managerId,
-            'Всего сделок': stats.total,
-            'Успешных Won': stats.won,
-            'Неуспешных Lost': stats.lost,
+            'Количество звонков': stats.calls,
+            'Количество встреч': stats.meetings,
+            'Количество броней': stats.bookings,
+            'Всего сделок': stats.totalDeals,
+            'Успешных сделок': stats.wonDeals,
             'Конверсия (%)': conversion + '%',
-            'Ср. цикл сделки (дней)': 14
+            'Средний чек ($)': avgCheck.toLocaleString(),
+            'Ср. цикл сделки (дней)': avgCycle || '—'
           };
         });
       }
 
       case 'RPT-024': { // Эффективность источников
-        const filtered = initialData.marketingChannels.filter((row: any) => {
+        const channelsData = initialData.marketingChannels?.channels || [];
+        const costsData = initialData.marketingChannels?.costs || [];
+
+        const filtered = channelsData.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedSource !== 'ALL' && row.source !== selectedSource) return false;
+          if (selectedChannel !== 'ALL' && getChannelBySource(row.source) !== selectedChannel) return false;
           if (startDate && row.createdAt && row.createdAt < startDate) return false;
           if (endDate && row.createdAt && row.createdAt > endDate) return false;
           return true;
         });
 
-        const channelsMap: Record<string, { total: number; won: number; revenue: number }> = {};
+        // Фильтруем расходы на рекламу по ЖК и периоду дат
+        const filteredCosts = costsData.filter((costRow: any) => {
+          if (selectedProject !== 'ALL' && costRow.projectId !== selectedProject) return false;
+          
+          const costStart = costRow.startDate;
+          const costEnd = costRow.endDate;
+          
+          if (startDate && costEnd && costEnd < startDate) return false;
+          if (endDate && costStart && costStart > endDate) return false;
+          
+          return true;
+        });
+
+        const costsMap: Record<string, number> = {};
+        filteredCosts.forEach((costRow: any) => {
+          const key = costRow.source;
+          costsMap[key] = (costsMap[key] || 0) + (Number(costRow.cost) || 0);
+        });
+
+        const channelsMap: Record<string, { leads: number; deals: number; won: number; revenue: number }> = {};
         filtered.forEach((row: any) => {
-          if (!channelsMap[row.source]) {
-            channelsMap[row.source] = { total: 0, won: 0, revenue: 0 };
+          const key = row.source;
+          if (!channelsMap[key]) {
+            channelsMap[key] = { leads: 0, deals: 0, won: 0, revenue: 0 };
           }
-          channelsMap[row.source].total += 1;
-          if (row.status === 'SUCCESS') {
-            channelsMap[row.source].won += 1;
-            channelsMap[row.source].revenue += row.price;
+          channelsMap[key].leads += 1;
+          if (row.dealId) {
+            channelsMap[key].deals += 1;
+            const isWon = ['SUCCESS', 'PAYMENT_CONFIRMED', 'CONTRACT'].includes(row.dealStatus);
+            if (isWon) {
+              channelsMap[key].won += 1;
+              channelsMap[key].revenue += Number(row.price) || 0;
+            }
           }
         });
 
         return Object.entries(channelsMap).map(([source, stats]) => {
-          const conversion = stats.total > 0 ? parseFloat(((stats.won / stats.total) * 100).toFixed(1)) : 0;
-          const cost = stats.total * 150;
+          const channelCode = getChannelBySource(source);
+          const channelName = CHANNEL_TRANSLATIONS[channelCode] || channelCode;
+          const conversion = stats.leads > 0 ? parseFloat(((stats.won / stats.leads) * 100).toFixed(1)) : 0;
+          const cost = costsMap[source] || 0;
           const roi = cost > 0 ? (((stats.revenue - cost) / cost) * 100).toFixed(1) + '%' : '—';
           return {
+            'Канал связи': channelName,
             'Источник рекламы': source,
-            'Привлечено лидов/сделок': stats.total,
+            'Привлечено лидов': stats.leads,
+            'Создано сделок': stats.deals,
             'Продано': stats.won,
             'Конверсия (%)': conversion + '%',
             'Выручка ($)': Math.round(stats.revenue),
             'Маркетинговый бюджет ($)': cost,
             'ROI (%)': roi
+          };
+        });
+      }
+
+      case 'RPT-025': { // Отчет по броням
+        const filtered = (initialData.bookingReport || []).filter((row: any) => {
+          if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
+          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+          if (selectedBookingType !== 'ALL' && row.type !== selectedBookingType) return false;
+          if (startDate && row.createdAt && row.createdAt < startDate) return false;
+          if (endDate && row.createdAt && row.createdAt > endDate) return false;
+          return true;
+        });
+
+        return filtered.map((row: any) => {
+          const cancelReason = row.status === 'EXPIRED' ? 'Истечение срока' : (row.status === 'CANCELLED' || row.status === 'RELEASED' ? 'Отказ клиента' : '—');
+          const bookingType = row.type === 'PAID' || row.type === 'HARD' ? 'Платная бронь' : 'Устная бронь';
+          const statusText = row.status === 'EXPIRED' ? 'Истекла' : (row.status === 'ACTIVE' ? 'Активна' : 'Снята');
+
+          return {
+            'Клиент': row.clientName,
+            'Квартира': `№${row.unitNumber}`,
+            'ЖК': row.projectName,
+            'Дата брони': row.createdAt,
+            'Срок действия': row.expiresAt,
+            'Тип': bookingType,
+            'Статус': statusText,
+            'Причина снятия': cancelReason,
+            'Сумма депозита ($)': Math.round(row.depositAmount)
           };
         });
       }
@@ -1462,7 +1561,7 @@ export default function ReportsClient({
       default:
         return [];
     }
-  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager, selectedCashFlowPaymentType, selectedDiscountRange, selectedDiscountManager, selectedMortgageBank, selectedMortgageStatus, draftStatusFilter, dynamicsInterval, cohortInterval, selectedInitiator, selectedApprover, minArea, maxArea, minPrice, maxPrice, filterFloor, filterView, filterUnitNumber, filterInitiator]);
+  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager, selectedCashFlowPaymentType, selectedDiscountRange, selectedDiscountManager, selectedMortgageBank, selectedMortgageStatus, draftStatusFilter, dynamicsInterval, cohortInterval, selectedInitiator, selectedApprover, minArea, maxArea, minPrice, maxPrice, filterFloor, filterView, filterUnitNumber, filterInitiator, selectedBookingType]);
 
   // Расчет динамических KPI показателей отчетов
   const reportStats = useMemo(() => {
@@ -1924,6 +2023,84 @@ export default function ReportsClient({
       ];
     }
 
+
+    if (activeReportId === 'RPT-023') {
+      let totalCalls = 0;
+      let totalMeetings = 0;
+      let topManager = '—';
+      let maxWon = -1;
+
+      // Temporary map to calculate top manager
+      const mgrMap: Record<string, number> = {};
+      activeReportData.forEach(row => {
+        totalCalls += Number(row['Количество звонков']) || 0;
+        totalMeetings += Number(row['Количество встреч']) || 0;
+        const mgr = row['Менеджер'];
+        const won = Number(row['Успешных сделок']) || 0;
+        if (mgr && mgr !== 'Не назначен') {
+          mgrMap[mgr] = (mgrMap[mgr] || 0) + won;
+        }
+      });
+
+      Object.entries(mgrMap).forEach(([mgr, won]) => {
+        if (won > maxWon) {
+          maxWon = won;
+          topManager = mgr;
+        }
+      });
+
+      return [
+        { label: 'Всего звонков', value: totalCalls.toString(), subtext: 'Сделано менеджерами', icon: '📞' },
+        { label: 'Всего встреч', value: totalMeetings.toString(), subtext: 'Проведено консультаций', icon: '🤝' },
+        { label: 'Лидер по продажам', value: topManager, subtext: maxWon > 0 ? `Сделок: ${maxWon}` : 'Нет данных', icon: '🏆' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-024') {
+      let totalBudget = 0;
+      let totalRevenue = 0;
+      let topChannel = '—';
+      let maxDeals = -1;
+
+      activeReportData.forEach(row => {
+        totalBudget += Number(row['Маркетинговый бюджет ($)']) || 0;
+        totalRevenue += Number(row['Выручка ($)']) || 0;
+        const deals = Number(row['Продано']) || 0;
+        if (deals > maxDeals) {
+          maxDeals = deals;
+          topChannel = row['Источник рекламы'] || '—';
+        }
+      });
+
+      const overallRoi = totalBudget > 0 ? (((totalRevenue - totalBudget) / totalBudget) * 100).toFixed(0) + '%' : '0%';
+
+      return [
+        { label: 'Маркетинговый бюджет', value: `${totalBudget.toLocaleString()}`, subtext: 'Суммарные затраты', icon: '💳' },
+        { label: 'Общий ROI рекламы', value: overallRoi, subtext: `Выручка: ${totalRevenue.toLocaleString()}`, icon: '📈' },
+        { label: 'Лидирующий источник', value: topChannel, subtext: maxDeals > 0 ? `Сделок: ${maxDeals}` : 'Нет данных', icon: '🚀' }
+      ];
+    }
+
+    if (activeReportId === 'RPT-025') {
+      let totalBookings = activeReportData.length;
+      let activeBookings = 0;
+      let convertedBookings = 0;
+
+      activeBookings = activeReportData.filter(row => row['Статус'] === 'Активна').length;
+      // booking-to-contract conversion is simulated or based on deal status
+      // We can count non-expired, converted ones
+      convertedBookings = activeReportData.filter(row => row['Причина снятия'].includes('Сделка') || row['Статус'] === 'Снята' && !row['Причина снятия'].includes('Истечение')).length;
+
+      const convPct = totalBookings > 0 ? ((convertedBookings / totalBookings) * 100).toFixed(0) + '%' : '0%';
+
+      return [
+        { label: 'Всего броней', value: totalBookings.toString(), subtext: 'За выбранный период', icon: '📖' },
+        { label: 'Активных броней', value: activeBookings.toString(), subtext: 'Ожидают оплаты/договора', icon: '⏳' },
+        { label: 'Конверсия в договор', value: convPct, subtext: 'Доля успешных броней', icon: '📝' }
+      ];
+    }
+
+
     // Дефолтные показатели для некритических отчетов
     return [
       { label: 'Всего записей', value: activeReportData.length.toString(), subtext: 'В текущей таблице', icon: '📊' }
@@ -2089,7 +2266,9 @@ export default function ReportsClient({
 
 
           {/* Менеджер - RPT-001, RPT-003, RPT-004, RPT-005, RPT-021 */}
-          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-003' || activeReportId === 'RPT-004' || activeReportId === 'RPT-005' || activeReportId === 'RPT-021') && (
+
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-003' || activeReportId === 'RPT-004' || activeReportId === 'RPT-005' || activeReportId === 'RPT-021' || activeReportId === 'RPT-023' || activeReportId === 'RPT-025') && (
+
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Менеджер</label>
               <select
@@ -2108,7 +2287,9 @@ export default function ReportsClient({
           )}
 
           {/* Источник трафика - RPT-001, RPT-007, RPT-022 */}
-          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-007' || activeReportId === 'RPT-022') && (
+
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-007' || activeReportId === 'RPT-022' || activeReportId === 'RPT-024') && (
+
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Источник</label>
               <select
@@ -2127,7 +2308,7 @@ export default function ReportsClient({
           )}
 
           {/* Канал - RPT-001, RPT-007 */}
-          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-007') && (
+          {(activeReportId === 'RPT-001' || activeReportId === 'RPT-007' || activeReportId === 'RPT-024') && (
             <div className={styles.filterGroup}>
               <label className={styles.filterLabel}>Канал</label>
               <select
@@ -2141,6 +2322,22 @@ export default function ReportsClient({
                     {CHANNEL_TRANSLATIONS[ch] || ch}
                   </option>
                 ))}
+              </select>
+            </div>
+          )}
+
+          {/* Тип брони - RPT-025 */}
+          {activeReportId === 'RPT-025' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Тип брони</label>
+              <select
+                className={styles.filterInput}
+                value={selectedBookingType}
+                onChange={e => setSelectedBookingType(e.target.value)}
+              >
+                <option value="ALL">Все типы</option>
+                <option value="SOFT">Устная бронь</option>
+                <option value="HARD">Платная бронь</option>
               </select>
             </div>
           )}
