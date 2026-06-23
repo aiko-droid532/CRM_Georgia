@@ -1065,6 +1065,7 @@ export default function ReportsClient({
             const label = `${monthNames[parseInt(mon)]} ${year}`;
             return {
               'Месяц': label,
+              ...(selectedCashFlowPaymentType !== 'ALL' ? { 'Схема оплаты': PAYMENT_TYPE_TRANSLATIONS[selectedCashFlowPaymentType] || selectedCashFlowPaymentType } : {}),
               'Прогноз / план ($)': Math.round(data.scheduled),
               'Фактически получено ($)': isPast ? Math.round(data.paid) : null,
               'Отклонение ($)': deviation,
