@@ -1695,7 +1695,7 @@ export default function ReportsClient({
         const status = row['Статус ипотеки'] || '';
         if (status.includes('Одобрено')) approved++;
         if (status.includes('рассмотрении')) pending++;
-        if (status.includes('Отказ')) rejected++;
+        if (status.includes('Отклонено')) rejected++;
       });
       const approvalRate = activeReportData.length > 0
         ? ((approved / activeReportData.length) * 100).toFixed(0) + '%'
