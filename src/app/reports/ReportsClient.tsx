@@ -286,6 +286,17 @@ export default function ReportsClient({
   const [selectedOverdueBucket, setSelectedOverdueBucket] = useState('ALL'); // ALL | 1-30 | 30-60 | 60-90 | 90+
   const [selectedDebtManager, setSelectedDebtManager] = useState('ALL');
 
+  // Фильтры для RPT-010
+  const [selectedCashFlowPaymentType, setSelectedCashFlowPaymentType] = useState('ALL');
+
+  // Фильтры для RPT-011
+  const [selectedDiscountRange, setSelectedDiscountRange] = useState('ALL'); // ALL | 0-3 | 3-5 | 5-10 | 10+
+  const [selectedDiscountManager, setSelectedDiscountManager] = useState('ALL');
+
+  // Фильтры для RPT-012
+  const [selectedMortgageBank, setSelectedMortgageBank] = useState('ALL');
+  const [selectedMortgageStatus, setSelectedMortgageStatus] = useState('ALL');
+
   // Фильтры для RPT-005
   const [draftStatusFilter, setDraftStatusFilter] = useState('ALL'); // ALL | IN_PROGRESS | APPROVED | REJECTED
   const [selectedInitiator, setSelectedInitiator] = useState('ALL');
@@ -333,6 +344,11 @@ export default function ReportsClient({
     setSelectedPaymentStatus('ALL');
     setSelectedOverdueBucket('ALL');
     setSelectedDebtManager('ALL');
+    setSelectedCashFlowPaymentType('ALL');
+    setSelectedDiscountRange('ALL');
+    setSelectedDiscountManager('ALL');
+    setSelectedMortgageBank('ALL');
+    setSelectedMortgageStatus('ALL');
     setDraftStatusFilter('ALL');
     setSelectedInitiator('ALL');
     setSelectedApprover('ALL');
@@ -1020,7 +1036,7 @@ export default function ReportsClient({
       case 'RPT-010': { // Сводный денежный поток
         const filtered = initialData.cashFlowReport.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          // Фильтр по периоду: month формат 'YYYY-MM', сравниваем с startDate/endDate
+          if (selectedCashFlowPaymentType !== 'ALL' && row.paymentType !== selectedCashFlowPaymentType) return false;
           if (startDate && row.month < startDate.substring(0, 7)) return false;
           if (endDate && row.month > endDate.substring(0, 7)) return false;
           return true;
@@ -1127,9 +1143,16 @@ export default function ReportsClient({
       case 'RPT-011': { // Отчет по индивидуальным скидкам
         const filtered = initialData.discountReport.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
-          if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+          if (selectedDiscountManager !== 'ALL' && row.managerId !== selectedDiscountManager) return false;
           if (startDate && row.createdAt && row.createdAt < startDate) return false;
           if (endDate && row.createdAt && row.createdAt > endDate) return false;
+          if (selectedDiscountRange !== 'ALL') {
+            const pct = row.discountPct;
+            if (selectedDiscountRange === '0-3' && !(pct >= 0 && pct <= 3)) return false;
+            if (selectedDiscountRange === '3-5' && !(pct > 3 && pct <= 5)) return false;
+            if (selectedDiscountRange === '5-10' && !(pct > 5 && pct <= 10)) return false;
+            if (selectedDiscountRange === '10+' && !(pct > 10)) return false;
+          }
           return true;
         });
 
@@ -1150,6 +1173,8 @@ export default function ReportsClient({
         const filtered = initialData.mortgageReport.filter((row: any) => {
           if (selectedProject !== 'ALL' && row.projectId !== selectedProject) return false;
           if (selectedManager !== 'ALL' && row.managerId !== selectedManager) return false;
+          if (selectedMortgageBank !== 'ALL' && row.mortgageBank !== selectedMortgageBank) return false;
+          if (selectedMortgageStatus !== 'ALL' && row.mortgageStatus !== selectedMortgageStatus) return false;
           if (startDate && row.createdAt && row.createdAt < startDate) return false;
           if (endDate && row.createdAt && row.createdAt > endDate) return false;
           return true;
@@ -1436,7 +1461,7 @@ export default function ReportsClient({
       default:
         return [];
     }
-  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager, draftStatusFilter, dynamicsInterval, cohortInterval, selectedInitiator, selectedApprover, minArea, maxArea, minPrice, maxPrice, filterFloor, filterView, filterUnitNumber, filterInitiator]);
+  }, [activeReportId, mockData, initialData, selectedProject, startDate, endDate, selectedManager, selectedSource, selectedChannel, selectedPaymentType, selectedClientType, selectedBlock, selectedUnitType, funnelViewMode, projects, selectedPaymentStatus, selectedOverdueBucket, selectedDebtManager, selectedCashFlowPaymentType, selectedDiscountRange, selectedDiscountManager, selectedMortgageBank, selectedMortgageStatus, draftStatusFilter, dynamicsInterval, cohortInterval, selectedInitiator, selectedApprover, minArea, maxArea, minPrice, maxPrice, filterFloor, filterView, filterUnitNumber, filterInitiator]);
 
   // Расчет динамических KPI показателей отчетов
   const reportStats = useMemo(() => {
@@ -2239,6 +2264,88 @@ export default function ReportsClient({
                   {Array.from(new Set(initialData.debtors.map((r: any) => r.managerId).filter(Boolean))).map((mgr: any) => (
                     <option key={mgr} value={mgr}>{mgr}</option>
                   ))}
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Фильтр схемы оплаты — только RPT-010 */}
+          {activeReportId === 'RPT-010' && (
+            <div className={styles.filterGroup}>
+              <label className={styles.filterLabel}>Схема оплаты</label>
+              <select
+                className={styles.filterInput}
+                value={selectedCashFlowPaymentType}
+                onChange={e => setSelectedCashFlowPaymentType(e.target.value)}
+              >
+                <option value="ALL">Все схемы</option>
+                {paymentTypes.map(pt => (
+                  <option key={pt} value={pt}>{PAYMENT_TYPE_TRANSLATIONS[pt] || pt}</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Фильтры диапазона скидки и менеджера — только RPT-011 */}
+          {activeReportId === 'RPT-011' && (
+            <>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Диапазон скидки</label>
+                <select
+                  className={styles.filterInput}
+                  value={selectedDiscountRange}
+                  onChange={e => setSelectedDiscountRange(e.target.value)}
+                >
+                  <option value="ALL">Любой %</option>
+                  <option value="0-3">до 3%</option>
+                  <option value="3-5">3–5%</option>
+                  <option value="5-10">5–10%</option>
+                  <option value="10+">более 10%</option>
+                </select>
+              </div>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Менеджер</label>
+                <select
+                  className={styles.filterInput}
+                  value={selectedDiscountManager}
+                  onChange={e => setSelectedDiscountManager(e.target.value)}
+                >
+                  <option value="ALL">Все менеджеры</option>
+                  {Array.from(new Set(initialData.discountReport.map((r: any) => r.managerId).filter(Boolean))).map((mgr: any) => (
+                    <option key={mgr} value={mgr}>{mgr}</option>
+                  ))}
+                </select>
+              </div>
+            </>
+          )}
+
+          {/* Фильтры банка и статуса заявки — только RPT-012 */}
+          {activeReportId === 'RPT-012' && (
+            <>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Банк</label>
+                <select
+                  className={styles.filterInput}
+                  value={selectedMortgageBank}
+                  onChange={e => setSelectedMortgageBank(e.target.value)}
+                >
+                  <option value="ALL">Все банки</option>
+                  {Array.from(new Set(initialData.mortgageReport.map((r: any) => r.mortgageBank).filter(Boolean))).map((bank: any) => (
+                    <option key={bank} value={bank}>{bank}</option>
+                  ))}
+                </select>
+              </div>
+              <div className={styles.filterGroup}>
+                <label className={styles.filterLabel}>Статус заявки</label>
+                <select
+                  className={styles.filterInput}
+                  value={selectedMortgageStatus}
+                  onChange={e => setSelectedMortgageStatus(e.target.value)}
+                >
+                  <option value="ALL">Все статусы</option>
+                  <option value="APPROVED">Одобрено</option>
+                  <option value="PENDING">На рассмотрении</option>
+                  <option value="REJECTED">Отклонено</option>
                 </select>
               </div>
             </>

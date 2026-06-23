@@ -497,6 +497,7 @@ export async function getCashFlowReportData(organizationId: string) {
       SELECT
         TO_CHAR(ps."dueDate", 'YYYY-MM') as "month",
         b."projectId" as "projectId",
+        COALESCE(d."paymentType", 'Не указана') as "paymentType",
         SUM(ps.amount)::double precision as "scheduledAmount",
         COUNT(*)::int as "scheduledCount"
       FROM "PaymentSchedule" ps
@@ -504,7 +505,7 @@ export async function getCashFlowReportData(organizationId: string) {
       JOIN "Unit" u ON d."unitId" = u.id
       JOIN "Block" b ON u."blockId" = b.id
       WHERE ps."organizationId" = ${organizationId}
-      GROUP BY TO_CHAR(ps."dueDate", 'YYYY-MM'), b."projectId"
+      GROUP BY TO_CHAR(ps."dueDate", 'YYYY-MM'), b."projectId", d."paymentType"
       ORDER BY "month" ASC
     `;
 
@@ -513,6 +514,7 @@ export async function getCashFlowReportData(organizationId: string) {
       SELECT
         TO_CHAR(t.date, 'YYYY-MM') as "month",
         b."projectId" as "projectId",
+        COALESCE(d."paymentType", 'Не указана') as "paymentType",
         SUM(t.amount)::double precision as "paidAmount",
         COUNT(*)::int as "paidCount"
       FROM "Transaction" t
@@ -521,22 +523,22 @@ export async function getCashFlowReportData(organizationId: string) {
       JOIN "Unit" u ON d."unitId" = u.id
       JOIN "Block" b ON u."blockId" = b.id
       WHERE t."organizationId" = ${organizationId}
-      GROUP BY TO_CHAR(t.date, 'YYYY-MM'), b."projectId"
+      GROUP BY TO_CHAR(t.date, 'YYYY-MM'), b."projectId", d."paymentType"
       ORDER BY "month" ASC
     `;
 
-    // Объединяем по ключу month+projectId
-    const map: Record<string, { month: string; projectId: string; scheduledAmount: number; paidAmount: number }> = {};
+    // Объединяем по ключу month+projectId+paymentType
+    const map: Record<string, { month: string; projectId: string; paymentType: string; scheduledAmount: number; paidAmount: number }> = {};
 
     scheduled.forEach(row => {
-      const key = `${row.month}__${row.projectId}`;
-      if (!map[key]) map[key] = { month: row.month, projectId: row.projectId, scheduledAmount: 0, paidAmount: 0 };
+      const key = `${row.month}__${row.projectId}__${row.paymentType}`;
+      if (!map[key]) map[key] = { month: row.month, projectId: row.projectId, paymentType: row.paymentType, scheduledAmount: 0, paidAmount: 0 };
       map[key].scheduledAmount += row.scheduledAmount;
     });
 
     actual.forEach(row => {
-      const key = `${row.month}__${row.projectId}`;
-      if (!map[key]) map[key] = { month: row.month, projectId: row.projectId, scheduledAmount: 0, paidAmount: 0 };
+      const key = `${row.month}__${row.projectId}__${row.paymentType}`;
+      if (!map[key]) map[key] = { month: row.month, projectId: row.projectId, paymentType: row.paymentType, scheduledAmount: 0, paidAmount: 0 };
       map[key].paidAmount += row.paidAmount;
     });
 
