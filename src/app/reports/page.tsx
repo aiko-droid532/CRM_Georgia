@@ -31,7 +31,8 @@ import {
   getPriceHistoryReportData,
   getAreaDiscrepancyReportData,
   getVipClientsReportData,
-  getClientDossierReportData
+  getClientDossierReportData,
+  getBookingReportData
 } from '@/app/actions/reports';
 import { getExchangeRate } from '@/app/actions/exchange';
 import ReportsClient from './ReportsClient';
@@ -85,6 +86,7 @@ export default async function ReportsPage({
   const areaDiscrepancy = await getAreaDiscrepancyReportData(organizationId);
   const vipClients = await getVipClientsReportData(organizationId);
   const clientDossier = await getClientDossierReportData(organizationId);
+  const bookingReport = await getBookingReportData(organizationId);
 
   // Загружаем динамические справочники для фильтров
   const projects = await getProjectsList(organizationId);
@@ -133,7 +135,8 @@ export default async function ReportsPage({
         priceHistory,
         areaDiscrepancy,
         vipClients,
-        clientDossier
+        clientDossier,
+        bookingReport
       }}
     />
   );
