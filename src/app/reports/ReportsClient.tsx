@@ -2484,8 +2484,29 @@ export default function ReportsClient({
                     <tr key={idx}>
                       {tableHeaders.map(header => {
                         const val = row[header];
+
+                        // Определяем класс ячейки по содержимому
+                        let cellClass = '';
+                        if (header === 'Статус оплат') {
+                          if (val === 'Оплачено') cellClass = styles.statusPaid;
+                          else if (val === 'Просрочено') cellClass = styles.statusOverdue;
+                          else if (val === 'Ожидается') cellClass = styles.statusPending;
+                        } else if (header === 'Статус RS.ge') {
+                          if (String(val).includes('Успешно')) cellClass = styles.statusSuccess;
+                          else if (String(val).includes('Ошибка')) cellClass = styles.statusFailed;
+                          else if (String(val).includes('Ожидает')) cellClass = styles.statusWaiting;
+                        } else if (header === 'Статус ипотеки') {
+                          if (String(val).includes('Одобрено')) cellClass = styles.statusApproved;
+                          else if (String(val).includes('Отклонено')) cellClass = styles.statusRejected;
+                          else if (String(val).includes('рассмотрении')) cellClass = styles.statusReview;
+                        } else if (header === 'Бакет просрочки') {
+                          if (String(val).includes('31–60')) cellClass = styles.bucket30_60;
+                          else if (String(val).includes('61–90')) cellClass = styles.bucket60_90;
+                          else if (String(val).includes('90+')) cellClass = styles.bucket90plus;
+                        }
+
                         return (
-                          <td key={header}>
+                          <td key={header} className={cellClass || undefined}>
                             {typeof val === 'number' && header.includes('($)')
                               ? `$${val.toLocaleString()}`
                               : typeof val === 'number' && header.includes('(GEL)')
