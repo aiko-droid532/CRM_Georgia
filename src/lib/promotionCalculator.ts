@@ -121,6 +121,15 @@ export function computeDisplayStatus(status: string, startAt: string | Date, end
   return status;
 }
 
+// Показ даты/времени акции всегда в часовом поясе Грузии (UTC+4, без перехода на летнее время) —
+// НЕ полагаемся на локальный часовой пояс браузера/сервера, т.к. он может отличаться и "плыть".
+export function formatGeorgiaDateTime(d: string | Date): string {
+  const date = new Date(d);
+  const shifted = new Date(date.getTime() + 4 * 60 * 60 * 1000);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(shifted.getUTCDate())}.${pad(shifted.getUTCMonth() + 1)}.${shifted.getUTCFullYear()}, ${pad(shifted.getUTCHours())}:${pad(shifted.getUTCMinutes())}`;
+}
+
 export function formatEffectSummary(effect: PromotionEffect): string {
   const v = effect.effectValue;
   switch (effect.effectType) {

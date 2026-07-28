@@ -435,7 +435,7 @@
 .promoBadge {
   position: absolute;
   top: 6px;
-  left: 6px;
+  right: 6px;
   background: linear-gradient(135deg, #ef4444, #b91c1c);
   color: #fff;
   font-size: 0.62rem;

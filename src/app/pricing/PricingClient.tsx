@@ -16,6 +16,7 @@ import {
   EFFECT_TYPE_LABELS,
   computeDisplayStatus,
   formatEffectSummary,
+  formatGeorgiaDateTime,
   type PromotionEffectType,
   type PromotionEffectValueType,
 } from '@/lib/promotionCalculator';
@@ -35,11 +36,26 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   CANCELLED: 'badgeCancelled',
 };
 
+// Показ даты/времени всегда в часовом поясе Грузии (UTC+4, без перехода на летнее время) —
+// НЕ полагаемся на локальный часовой пояс браузера/компьютера (getHours/toLocaleString зависят от него
+// и поэтому "плывут", если у компьютера выставлен другой пояс).
+function toGeorgiaParts(d: string | Date) {
+  const date = new Date(d);
+  const shifted = new Date(date.getTime() + 4 * 60 * 60 * 1000);
+  return {
+    y: shifted.getUTCFullYear(),
+    m: shifted.getUTCMonth() + 1,
+    day: shifted.getUTCDate(),
+    h: shifted.getUTCHours(),
+    min: shifted.getUTCMinutes(),
+  };
+}
+
 function toDatetimeLocal(d?: string | Date): string {
   if (!d) return '';
-  const date = new Date(d);
+  const { y, m, day, h, min } = toGeorgiaParts(d);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  return `${y}-${pad(m)}-${pad(day)}T${pad(h)}:${pad(min)}`;
 }
 
 // datetime-local input не содержит часового пояса — если интерпретировать такую строку
@@ -319,7 +335,7 @@ export default function PricingClient({ projects, initialPromotions, organizatio
                   <tr key={p.id}>
                     <td style={{ fontWeight: 700 }}>{p.name}</td>
                     <td>{EFFECT_TYPE_LABELS[p.effectType as PromotionEffectType]}: {formatEffectSummary({ effectType: p.effectType, effectValueType: p.effectValueType, effectValue: p.effectValue })}</td>
-                    <td style={{ fontSize: '0.78rem' }}>{new Date(p.startAt).toLocaleString('ru-RU')} — {new Date(p.endAt).toLocaleString('ru-RU')}</td>
+                    <td style={{ fontSize: '0.78rem' }}>{formatGeorgiaDateTime(p.startAt)} — {formatGeorgiaDateTime(p.endAt)}</td>
                     <td>{p.unitsCount}</td>
                     <td><span className={`${styles.badge} ${(styles as any)[STATUS_BADGE_CLASS[displayStatus]]}`}>{STATUS_LABELS[displayStatus]}</span></td>
                     <td style={{ fontSize: '0.78rem', color: '#64748b' }}>{p.createdByName || '—'}</td>

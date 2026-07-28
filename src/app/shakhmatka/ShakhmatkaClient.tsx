@@ -12,7 +12,7 @@ import LeadDossier from '@/components/Leads/LeadDossier';
 import * as XLSX from 'xlsx';
 import UnitLayoutSvg from '@/components/Shakhmatka/UnitLayoutSvg';
 import { getLivePromotionsMap } from '@/app/actions/promotions';
-import { calcPromoPrice, formatEffectSummary, type PromotionEffectType } from '@/lib/promotionCalculator';
+import { calcPromoPrice, formatEffectSummary, formatGeorgiaDateTime, type PromotionEffectType } from '@/lib/promotionCalculator';
 import {
   calculateInstallmentPlan,
   applyStandardPreset,
@@ -37,7 +37,7 @@ interface ShakhmatkaClientProps {
   organizationId: string;
   userRole?: string;
 }
- 
+
 export default function ShakhmatkaClient({ projects: initialProjects, leads, organizationId, userRole = 'manager' }: ShakhmatkaClientProps) {
   const role = userRole as UserRole;
   const canUnits = canManageUnits(role);
@@ -52,7 +52,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const [projects, setProjects] = useState(initialProjects);
   const [activeProjectId, setActiveProjectId] = useState(projects[0]?.id || null);
   const [activeBlockId, setActiveBlockId] = useState(projects[0]?.blocks?.[0]?.id || null);
-  
+
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [roomsFilter, setRoomsFilter] = useState('ALL');
   const [priceFilter, setPriceFilter] = useState({ min: '', max: '' });
@@ -93,13 +93,13 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       [key]: !prev[key]
     }));
   };
-  
+
   // Досье привязанного клиента и история действий квартиры (Замечание аналитика)
   const [dossierLead, setDossierLead] = useState<any | null>(null);
   const [actionHistory, setActionHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
- 
-  
+
+
   // Состояния для импорта Excel
   const [showImportModal, setShowImportModal] = useState(false);
   const [importFile, setImportFile] = useState<File | null>(null);
@@ -225,7 +225,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       let foundUnit = null;
       let foundBlockId = null;
       let foundProjectId = null;
-      
+
       for (const p of projects) {
         for (const b of p.blocks || []) {
           const unit = b.units?.find((u: any) => u.id === highlightUnitId);
@@ -238,7 +238,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
         }
         if (foundUnit) break;
       }
-      
+
       if (foundUnit) {
         // Установим проект и корпус активными, чтобы пользователь видел подсветку в сетке
         setActiveProjectId(foundProjectId);
@@ -246,7 +246,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
         // Откроем карточку квартиры
         handleUnitClick(foundUnit);
       }
-      
+
       // Очищаем параметры URL, чтобы при обновлении страницы она не открывалась постоянно
       const url = new URL(window.location.href);
       url.searchParams.delete('highlightUnitId');
@@ -265,7 +265,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
             getUnitAssociatedClient(selectedUnit.id)
           ]);
           setActionHistory(history);
-          
+
           // Обновляем selectedUnit только если id совпадает (чтобы избежать гонки при быстром перекликивании)
           setSelectedUnit((prev: any) => {
             if (prev && prev.id === selectedUnit.id) {
@@ -328,7 +328,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       });
 
       const imgData = canvas.toDataURL('image/png');
-      
+
       // Создаем A4 PDF-документ (210мм x 297мм)
       const pdf = new jsPDF({
         orientation: 'portrait',
@@ -339,7 +339,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       const imgWidth = 210; // Ширина A4
       const pageHeight = 297; // Высота A4
       const imgHeight = (canvas.height * imgWidth) / canvas.width;
-      
+
       pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
       pdf.save(`Паспорт_Квартира_№${selectedUnit.number}_${currentProject?.name || 'ЖК'}.pdf`);
     } catch (err) {
@@ -635,11 +635,11 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     const expiresAt = new Date(expiresAtStr).getTime();
     const diffMs = expiresAt - now;
     if (diffMs <= 0) return '00:00';
-    
+
     const diffMinsTotal = Math.max(0, Math.floor(diffMs / 60000));
     const hours = Math.floor(diffMinsTotal / 60);
     const mins = diffMinsTotal % 60;
-    
+
     return `${hours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')}`;
   };
 
@@ -649,7 +649,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
 
     eventSource.onmessage = (event) => {
       const data = JSON.parse(event.data);
-      
+
       if (data.type === 'STATUS_CHANGED') {
         setProjects(prevProjects => {
           const newProjects = [...prevProjects];
@@ -732,7 +732,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     }
     setSelectedUnit(null);
     setPriceHistory([]);
-    
+
     // Если есть backToLeadId в URL, возвращаемся назад с автооткрытием этого лида
     const params = new URLSearchParams(window.location.search);
     const backToLeadId = params.get('backToLeadId');
@@ -749,14 +749,14 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   };
 
   // ========== CAT-004: CRUD операции ==========
-  
+
   // Создание квартиры
   const handleCreateUnit = async () => {
     if (!selectedBlockId) {
       alert('Выберите корпус');
       return;
     }
-    
+
     const unitData = {
       number: editUnitData.number,
       floor: parseInt(editUnitData.floor),
@@ -780,12 +780,12 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       organizationId,
       createdById: organizationId
     };
-    
+
     if (!unitData.number || !unitData.floor || !unitData.area || !unitData.rooms || !unitData.price) {
       alert('Заполните все обязательные поля');
       return;
     }
-    
+
     setLoading(true);
     const res = await createUnit(unitData);
     if (res.success) {
@@ -803,9 +803,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const handleUpdateUnit = async () => {
     const reason = prompt('Укажите причину изменения:', 'Редактирование карточки квартиры');
     if (!reason) return;
-    
+
     const updates: any = { unitId: selectedUnit.id, reason, organizationId, initiatorId: organizationId };
-    
+
     if (editUnitData.number && editUnitData.number !== selectedUnit.number.toString()) updates.number = editUnitData.number;
     if (editUnitData.floor && parseInt(editUnitData.floor) !== selectedUnit.floor) updates.floor = parseInt(editUnitData.floor);
     if (editUnitData.area && parseFloat(editUnitData.area) !== selectedUnit.area) updates.area = parseFloat(editUnitData.area);
@@ -824,7 +824,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     if (editUnitData.registeredInPublicRegistry !== !!selectedUnit.registeredInPublicRegistry) updates.registeredInPublicRegistry = editUnitData.registeredInPublicRegistry;
     if (editUnitData.availableForSale !== (selectedUnit.availableForSale ?? true)) updates.availableForSale = editUnitData.availableForSale;
     if (editUnitData.pricePerSqmVAT !== (selectedUnit.pricePerSqmVAT?.toString() || '')) updates.pricePerSqmVAT = editUnitData.pricePerSqmVAT ? parseFloat(editUnitData.pricePerSqmVAT) : null;
-    
+
     setLoading(true);
     const res = await updateUnit(updates);
     if (res.success) {
@@ -842,10 +842,10 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const handleDeleteUnit = async () => {
     const reason = prompt('Укажите причину исключения квартиры из продаж:', 'Исключена из плана продаж');
     if (!reason) return;
-    
+
     const confirmed = confirm('ВНИМАНИЕ! Квартира будет исключена из продаж (статус EXCLUDED). Это действие нельзя отменить через интерфейс. Продолжить?');
     if (!confirmed) return;
-    
+
     setLoading(true);
     const res = await deleteUnit(selectedUnit.id, reason, organizationId, organizationId);
     if (res.success) {
@@ -898,11 +898,11 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     if (res.success) {
       alert(' Корпус создан, шахматка сгенерирована!');
       setShowConstructorModal(false);
-      
+
       // Автоматически переключимся на сгенерированный ЖК и корпус
       setActiveProjectId(newBlockData.projectId);
       setActiveBlockId(res.blockId || null);
-      
+
       setNewBlockData({
         projectId: newBlockData.projectId,
         blockNumber: '',
@@ -985,14 +985,14 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       alert('Выберите файл Excel');
       return;
     }
-    
+
     setLoading(true);
     setImportResult(null);
     const formData = new FormData();
     formData.append('file', importFile);
-    
+
     const res = await importUnitsFromExcel(formData, organizationId, organizationId);
-    
+
     if (res.success) {
       alert(` Импорт завершен!\n Добавлено: ${res.imported}\n Обновлено: ${res.updated}\n Всего строк: ${res.total}\n${res.errors ? ` Ошибок: ${res.errors.length}` : ''}`);
       router.refresh();
@@ -1031,9 +1031,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       return alert('Выберите дату и время окончания платной брони на календаре!');
     }
     setLoading(true);
-    
-    const duration = bookingType === 'SOFT' 
-      ? Number(softDuration) 
+
+    const duration = bookingType === 'SOFT'
+      ? Number(softDuration)
       : (bookingType === 'HARD' && hardDuration !== 'CUSTOM' ? Number(hardDuration) : 0);
 
     const customExpiresAt = bookingType === 'HARD' && hardDuration === 'CUSTOM' ? new Date(customHardDateTime) : undefined;
@@ -1046,7 +1046,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       duration: duration,
       customExpiresAt: customExpiresAt
     });
-    
+
     if (res.success) {
       setSelectedUnit(null);
       alert(' Объект успешно забронирован!');
@@ -1101,7 +1101,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const handleRemoveFromQueue = async (waitingListId: string) => {
     const confirmed = confirm('Вы уверены, что хотите убрать клиента из листа ожидания?');
     if (!confirmed) return;
-    
+
     setWlSubmitting(true);
     const res = await removeFromWaitingListAction({
       waitingListId,
@@ -1163,7 +1163,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     if (!unitsByFloor[unit.floor]) unitsByFloor[unit.floor] = [];
     unitsByFloor[unit.floor].push(unit);
   });
-  
+
   // Сортируем квартиры на каждом этаже по подъезду, а внутри подъезда по номеру квартиры
   Object.keys(unitsByFloor).forEach(floorStr => {
     const f = Number(floorStr);
@@ -1190,7 +1190,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
         if (unit.status !== statusFilter) return true;
       }
     }
-    
+
     if (roomsFilter !== 'ALL') {
       if (roomsFilter === '4') {
         if (unit.rooms !== 4) return true;
@@ -1200,7 +1200,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
         if (unit.rooms?.toString() !== roomsFilter) return true;
       }
     }
-    
+
     if (priceFilter.min && unit.price < Number(priceFilter.min)) return true;
     if (priceFilter.max && unit.price > Number(priceFilter.max)) return true;
     if (areaFilter.min && unit.area < Number(areaFilter.min)) return true;
@@ -1256,8 +1256,8 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
               </button>
             )}
             {canUnits && (
-              <button 
-                className={styles.massPriceBtn} 
+              <button
+                className={styles.massPriceBtn}
                 style={{ background: '#f8fafc', color: '#0f172a', border: '1.5px solid #cbd5e1' }}
                 onClick={() => router.push('/shakhmatka/constructor')}
               >
@@ -1453,12 +1453,12 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
             {/* Панель со складными подвкладками (Аккордеон) */}
             <div className={styles.panelBodySingle}>
               <div style={{ maxWidth: '100%', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '20px', padding: '10px 40px 40px 40px' }}>
-              
+
               {/* Подвкладка 1: Характеристики и планировка */}
               <div className={styles.accordionItem}>
-                <button 
-                  type="button" 
-                  className={styles.accordionHeader} 
+                <button
+                  type="button"
+                  className={styles.accordionHeader}
                   onClick={() => toggleAccordion('info')}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}> Характеристики и планировка</span>
@@ -1489,7 +1489,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                               {formatEffectSummary(promo)} → ${pr.promoPriceUSD.toLocaleString()} ({pr.promoPriceGEL.toLocaleString()} ₾)
                             </span>
                             <div style={{ fontSize: '0.7rem', color: '#991b1b', marginTop: '2px' }}>
-                              До {new Date(promo.endAt).toLocaleString('ru-RU')}
+                              До {formatGeorgiaDateTime(promo.endAt)}
                             </div>
                           </div>
                         );

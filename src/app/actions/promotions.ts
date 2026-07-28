@@ -4,6 +4,15 @@ import { db as prisma, Prisma } from '@/lib/db';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { logAction } from '@/lib/logger';
 import { requireRole, canCreatePromotions, canApprovePromotions } from '@/lib/roles';
+import { formatEffectSummary } from '@/lib/promotionCalculator';
+
+// Таблицы: "Promotion" (сама акция) и "PromotionUnit" (связующая, аналог их flat_promotions).
+// Названия ТАБЛИЦ не меняем — только 4 поля в "Promotion" выровнены под БД сайта заказчика:
+// discount, discount_type ('percent' | 'amount'), condition_label, updated_at.
+
+function toCustomerDiscountType(effectValueType: string): 'percent' | 'amount' {
+  return effectValueType === 'PERCENT' ? 'percent' : 'amount';
+}
 
 // ── Подбор помещений по фильтру (шаг 1 конструктора) ────────────────────────
 // Возвращает только помещения, которые СЕЙЧАС не участвуют ни в одной активной
@@ -77,13 +86,24 @@ export async function createPromotionDraft(data: {
     }
 
     const id = crypto.randomUUID();
+    const conditionLabel = formatEffectSummary({
+      effectType: data.effectType as any,
+      effectValueType: data.effectValueType as any,
+      effectValue: data.effectValue,
+    });
+    const discountType = toCustomerDiscountType(data.effectValueType);
+
     await prisma.$executeRaw`
       INSERT INTO "Promotion" (
         "id", "name", "effectType", "effectValueType", "effectValue", "nbgRate",
-        "startAt", "endAt", "status", "createdById", "organizationId", "createdAt", "updatedAt"
+        "startAt", "endAt", "status", "createdById", "organizationId",
+        discount, discount_type, condition_label,
+        "createdAt", updated_at
       ) VALUES (
         ${id}, ${data.name}, ${data.effectType}, ${data.effectValueType}, ${data.effectValue}, ${data.nbgRate},
-        ${new Date(data.startAt)}, ${new Date(data.endAt)}, 'DRAFT', ${data.createdById}, ${data.organizationId}, NOW(), NOW()
+        ${new Date(data.startAt)}, ${new Date(data.endAt)}, 'DRAFT', ${data.createdById}, ${data.organizationId},
+        ${data.effectValue}, ${discountType}, ${conditionLabel},
+        NOW(), NOW()
       )
     `;
 
@@ -170,6 +190,13 @@ export async function updatePromotionDraft(data: {
   try {
     await requireRole(canApprovePromotions, 'редактирование акции');
 
+    const conditionLabel = formatEffectSummary({
+      effectType: data.effectType as any,
+      effectValueType: data.effectValueType as any,
+      effectValue: data.effectValue,
+    });
+    const discountType = toCustomerDiscountType(data.effectValueType);
+
     await prisma.$executeRaw`
       UPDATE "Promotion"
       SET "name" = ${data.name},
@@ -179,7 +206,10 @@ export async function updatePromotionDraft(data: {
           "nbgRate" = ${data.nbgRate},
           "startAt" = ${new Date(data.startAt)},
           "endAt" = ${new Date(data.endAt)},
-          "updatedAt" = NOW()
+          discount = ${data.effectValue},
+          discount_type = ${discountType},
+          condition_label = ${conditionLabel},
+          updated_at = NOW()
       WHERE id = ${data.promotionId} AND "organizationId" = ${data.organizationId}
     `;
 
@@ -193,6 +223,7 @@ export async function updatePromotionDraft(data: {
 
     logAction('Отредактирована акция', { promotionId: data.promotionId, units: data.unitIds.length });
     revalidatePath('/pricing');
+    revalidatePath('/shakhmatka');
     return { success: true };
   } catch (error) {
     console.error('updatePromotionDraft error:', error);
@@ -207,11 +238,10 @@ export async function approvePromotion(promotionId: string, approvedById: string
 
     await prisma.$executeRaw`
       UPDATE "Promotion"
-      SET status = 'ACTIVE', "approvedById" = ${approvedById}, "approvedAt" = NOW(), "updatedAt" = NOW()
+      SET status = 'ACTIVE', "approvedById" = ${approvedById}, "approvedAt" = NOW(), updated_at = NOW()
       WHERE id = ${promotionId} AND "organizationId" = ${organizationId} AND status = 'DRAFT'
     `;
 
-    // Фиксируем в истории каждого помещения факт добавления в акцию
     const promos: any[] = await prisma.$queryRaw`SELECT name FROM "Promotion" WHERE id = ${promotionId} LIMIT 1`;
     const promoName = promos[0]?.name || '';
     const units: any[] = await prisma.$queryRaw`SELECT "unitId" FROM "PromotionUnit" WHERE "promotionId" = ${promotionId}`;
@@ -237,7 +267,7 @@ export async function cancelPromotion(promotionId: string, organizationId: strin
   try {
     await requireRole(canApprovePromotions, 'отмена акции');
     await prisma.$executeRaw`
-      UPDATE "Promotion" SET status = 'CANCELLED', "updatedAt" = NOW()
+      UPDATE "Promotion" SET status = 'CANCELLED', updated_at = NOW()
       WHERE id = ${promotionId} AND "organizationId" = ${organizationId}
     `;
     revalidatePath('/pricing');
@@ -265,7 +295,6 @@ export async function deletePromotion(promotionId: string, organizationId: strin
 }
 
 // ── Карта активных акций по всем помещениям организации (для Шахматки) ──────
-// Возвращает только акции, которые СЕЙЧАС реально действуют (Active + внутри периода).
 export async function getLivePromotionsMap(organizationId: string) {
   noStore();
   try {
