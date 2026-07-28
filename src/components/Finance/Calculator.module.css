@@ -115,3 +115,10 @@
   font-weight: 600;
   cursor: pointer;
 }
+
+.gelValue {
+  font-size: 0.85em;
+  color: var(--muted-foreground);
+  font-weight: normal;
+  margin-left: 6px;
+}

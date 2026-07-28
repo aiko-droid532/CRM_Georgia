@@ -2,6 +2,8 @@
 
 import { db as prisma, Prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { logAction } from '@/lib/logger';
+import { requireRole, canManageDeals, canManageUnits } from '@/lib/roles';
 
 export async function createClient(formData: {
   name: string;
@@ -22,6 +24,7 @@ export async function createClient(formData: {
   isVip?: boolean;
 }) {
   try {
+    await requireRole(canManageDeals, 'создание клиента');
     const existingByPhone: any[] = await prisma.$queryRaw`
       SELECT id, name FROM "Lead" 
       WHERE "phone" = ${formData.phone} 
@@ -97,6 +100,7 @@ export async function createClient(formData: {
       )
     `;
 
+    logAction('Создание нового клиента/лида', { name: formData.name, phone: formData.phone, source: formData.source });
     revalidatePath('/clients');
     return { success: true, client: { id: clientId } };
   } catch (error) {
@@ -107,6 +111,8 @@ export async function createClient(formData: {
 
 export async function anonymizeClient(leadId: string, managerId: string, reason: string) {
   try {
+    await requireRole(canManageDeals, 'анонимизация клиента');
+    logAction('Анонимизация клиента', { leadId, managerId, reason });
     const currentList: any[] = await prisma.$queryRaw`
       SELECT name, phone, email, iin, personalNumber, passportNumber, passportCountry, codeWord 
       FROM "Lead" WHERE id = ${leadId} LIMIT 1
@@ -372,6 +378,7 @@ export async function getLeadsBoard(organizationId: string) {
 
 export async function assignLeadToManager(leadId: string, managerId: string) {
   try {
+    await requireRole(canManageDeals, 'взять лида в работу');
     const res = await prisma.$executeRaw`
       UPDATE "Lead"
       SET "managerId" = ${managerId}, "status" = 'IN_QUALIFICATION', "updatedAt" = NOW()
@@ -389,6 +396,7 @@ export async function assignLeadToManager(leadId: string, managerId: string) {
 
 export async function logCallAttempt(leadId: string) {
   try {
+    await requireRole(canManageDeals, 'фиксация звонка по лиду');
     const leads: any[] = await prisma.$queryRaw`SELECT "callAttempts" FROM "Lead" WHERE id = ${leadId}`;
     if (!leads.length) return { success: false };
     
@@ -433,6 +441,7 @@ export async function logCallAttempt(leadId: string) {
 
 export async function updateLeadStatus(leadId: string, newStatus: string) {
   try {
+    await requireRole(canManageDeals, 'изменение статуса лида');
     await prisma.$executeRaw`
       UPDATE "Lead" SET "status" = ${newStatus}::"LeadStatus", "updatedAt" = NOW() WHERE id = ${leadId}
     `;
@@ -452,6 +461,7 @@ export async function createDeal(data: {
   interestId: string;
 }) {
   try {
+    await requireRole(canManageDeals, 'создание сделки');
     const leads: any[] = await prisma.$queryRaw`
       SELECT "phone", "source" FROM "Lead" WHERE "id" = ${data.leadId} LIMIT 1
     `;
@@ -498,6 +508,7 @@ export async function updateClient(data: {
   isVip?: boolean;
 }) {
   try {
+    await requireRole(canManageDeals, 'редактирование клиента');
     const currentList: any[] = await prisma.$queryRaw`
       SELECT * FROM "Lead" WHERE id = ${data.id} LIMIT 1
     `;
@@ -731,6 +742,7 @@ export async function savePaymentScheduleAction(data: {
   organizationId: string;
 }) {
   try {
+    await requireRole(canManageDeals, 'сохранение графика платежей');
     let dealId = '';
     
     const deals: any[] = await prisma.$queryRaw`
@@ -790,6 +802,7 @@ export async function recordPaymentAction(data: {
   organizationId: string;
 }) {
   try {
+    await requireRole(canManageDeals, 'подтверждение платежа');
     // 1. Находим платеж по графику
     const schedules: any[] = await prisma.$queryRaw`
       SELECT * FROM "PaymentSchedule" 
@@ -846,27 +859,18 @@ export async function recordPaymentAction(data: {
             WHERE id = ${deal.unitId}
           `;
         }
-      } else if (paidSchedules.length === 1) {
-        // Первый платеж -> Оплата подтверждена и Первый взнос внесен
+      } else if (paidSchedules.length >= 1) {
+        // Любой оплаченный взнос -> переводим сделку в SUCCESS (Won), а квартиру в SOLD
         await prisma.$executeRaw`
           UPDATE "Deal" 
-          SET status = 'PAYMENT_CONFIRMED'::"DealStatus", "updatedAt" = NOW() 
+          SET status = 'SUCCESS'::"DealStatus", "updatedAt" = NOW() 
           WHERE id = ${deal.id}
         `;
         if (deal.unitId) {
           await prisma.$executeRaw`
             UPDATE "Unit" 
-            SET status = 'DOWN_PAYMENT_RECEIVED'::"UnitStatus", "updatedAt" = NOW() 
+            SET status = 'SOLD'::"UnitStatus", "updatedAt" = NOW() 
             WHERE id = ${deal.unitId}
-          `;
-        }
-      } else {
-        // Промежуточный платеж -> проверяем, чтобы статус сделки был не ниже PAYMENT_CONFIRMED
-        if (['RESERVATION', 'WAITING_PAYMENT', 'CONTRACT', 'CLIENT_CONFIRMATION', 'NEW_LEAD', 'CLARIFICATION'].includes(deal.status)) {
-          await prisma.$executeRaw`
-            UPDATE "Deal" 
-            SET status = 'PAYMENT_CONFIRMED'::"DealStatus", "updatedAt" = NOW() 
-            WHERE id = ${deal.id}
           `;
         }
       }
@@ -901,6 +905,7 @@ export async function getActiveManagers(organizationId: string) {
 
 export async function assignLeadAutomatically(leadId: string, organizationId: string) {
   try {
+    await requireRole(canManageDeals, 'автораспределение лида');
     await prisma.$executeRaw`
       UPDATE "Lead" 
       SET "status" = 'IN_QUALIFICATION', 
@@ -909,7 +914,7 @@ export async function assignLeadAutomatically(leadId: string, organizationId: st
       WHERE id = ${leadId}
     `;
     
-    console.log(`✅ Лид ${leadId} переведен в статус IN_QUALIFICATION`);
+    console.log(` Лид ${leadId} переведен в статус IN_QUALIFICATION`);
     return { success: true };
   } catch (error) {
     console.error('assignLeadAutomatically error:', error);
@@ -926,12 +931,13 @@ export async function qualifyLead(leadId: string, data: {
   paymentMethod?: string;
   sourceInfo?: string;
   // НОВЫЕ ПОЛЯ
-  roomsInterested?: number | null;
-  areaMin?: number | null;
-  areaMax?: number | null;
+  roomsInterested?: number | string | null;
+  areaMin?: number | string | null;
+  areaMax?: number | string | null;
   deliveryDeadline?: string | null;
 }) {
   try {
+    await requireRole(canManageDeals, 'квалификация лида');
     await prisma.$executeRaw`
       UPDATE "Lead" 
       SET 
@@ -941,9 +947,9 @@ export async function qualifyLead(leadId: string, data: {
         "budgetMax" = ${data.budgetMax || null},
         "paymentMethod" = ${data.paymentMethod || null},
         "sourceInfo" = ${data.sourceInfo || null},
-        "roomsInterested" = ${data.roomsInterested ?? null},
-        "areaMin" = ${data.areaMin ?? null},
-        "areaMax" = ${data.areaMax ?? null},
+        "roomsInterested" = ${data.roomsInterested === '' || data.roomsInterested === undefined || data.roomsInterested === null ? null : data.roomsInterested},
+        "areaMin" = ${data.areaMin === '' || data.areaMin === undefined || data.areaMin === null ? null : data.areaMin},
+        "areaMax" = ${data.areaMax === '' || data.areaMax === undefined || data.areaMax === null ? null : data.areaMax},
         "deliveryDeadline" = ${data.deliveryDeadline || null},
         "status" = 'QUALIFIED',
         "updatedAt" = NOW()
@@ -974,7 +980,7 @@ export async function escalateExpiredLeads() {
         UPDATE "Lead" SET "escalatedAt" = NOW(), "updatedAt" = NOW() WHERE id = ${lead.id}
       `;
       
-      console.log(`⚠️ Эскалация лида ${lead.name} (${lead.id}) для менеджера ${lead.managerId}`);
+      console.log(` Эскалация лида ${lead.name} (${lead.id}) для менеджера ${lead.managerId}`);
     }
     
     return { success: true, escalatedCount: expiredLeads.length };
@@ -1007,7 +1013,7 @@ export async function getLeadsKanban(organizationId: string) {
         l."createdAt" ASC
     `;
     
-    console.log(`✅ getLeadsKanban: найдено ${leads.length} лидов для orgId=${organizationId}`);
+    console.log(` getLeadsKanban: найдено ${leads.length} лидов для orgId=${organizationId}`);
     return leads;
   } catch (error) {
     console.error('getLeadsKanban error:', error);
@@ -1017,6 +1023,8 @@ export async function getLeadsKanban(organizationId: string) {
 
 export async function reassignLead(leadId: string, newManagerId: string, reason: string) {
   try {
+    // Переназначение лида другому менеджеру — действие руководителя (admin/rop/senior_manager)
+    await requireRole(canManageUnits, 'переназначение лида');
     const oldLead: any[] = await prisma.$queryRaw`
       SELECT "managerId" FROM "Lead" WHERE id = ${leadId}
     `;
@@ -1103,6 +1111,7 @@ export async function bookScheduleSlot(data: {
   time: string;
 }) {
   try {
+    await requireRole(canManageDeals, 'запись на прием');
     // Проверяем, не занят ли уже этот слот у этого менеджера
     const existing: any[] = await prisma.$queryRaw`
       SELECT id FROM "LeadSchedule"
@@ -1150,6 +1159,7 @@ export async function bookScheduleSlot(data: {
 
 export async function cancelScheduleSlot(slotId: string, reason: string) {
   try {
+    await requireRole(canManageDeals, 'отмена приема');
     await prisma.$executeRaw`
       UPDATE "LeadSchedule"
       SET "status" = 'CANCELLED', "updatedAt" = NOW()
@@ -1165,6 +1175,7 @@ export async function cancelScheduleSlot(slotId: string, reason: string) {
 
 export async function completeScheduleSlot(slotId: string) {
   try {
+    await requireRole(canManageDeals, 'подтверждение приема');
     await prisma.$executeRaw`
       UPDATE "LeadSchedule"
       SET "status" = 'COMPLETED', "updatedAt" = NOW()

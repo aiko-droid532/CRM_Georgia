@@ -24,10 +24,14 @@ import {
 } from '@/app/actions/leads';
 import { searchUnits, addInterest } from '@/app/actions/inventory';
 
+import { canManageDeals, canViewAllDeals, isReadOnly, UserRole } from '@/lib/roles';
+
 interface ClientManagementClientProps {
   initialLeads: any[];
   projects: any[];
   organizationId: string;
+  userRole?: string;
+  managerId?: string;
 }
 
 // Статусы лидов по ТЗ
@@ -378,10 +382,11 @@ function ScheduleModal({ lead, managerId, onClose, onRefresh }: {
 }
 
 // Просмотр приема в графике
-function AppointmentDetailModal({ slot, onClose, onRefresh }: {
+function AppointmentDetailModal({ slot, onClose, onRefresh, readOnly = false }: {
   slot: any;
   onClose: () => void;
   onRefresh: () => void;
+  readOnly?: boolean;
 }) {
   const [loading, setLoading] = useState(false);
 
@@ -441,7 +446,7 @@ function AppointmentDetailModal({ slot, onClose, onRefresh }: {
         <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '24px' }}>
           <button className={styles.actionBtn} onClick={onClose} disabled={loading}>Закрыть</button>
           
-          {slot.status === 'BOOKED' && (
+          {slot.status === 'BOOKED' && !readOnly && (
             <>
               <button className={`${styles.actionBtn} ${styles.dangerActionBtn}`} onClick={handleCancel} disabled={loading}>Отменить прием</button>
               <button className={`${styles.actionBtn} ${styles.successActionBtn}`} onClick={handleComplete} disabled={loading}>Проведен &check;</button>
@@ -453,7 +458,12 @@ function AppointmentDetailModal({ slot, onClose, onRefresh }: {
   );
 }
 
-export default function ClientManagementClient({ initialLeads, projects, organizationId }: ClientManagementClientProps) {
+export default function ClientManagementClient({ initialLeads, projects, organizationId, userRole = 'manager', managerId = '' }: ClientManagementClientProps) {
+  const role = userRole as UserRole;
+  const canManage = canManageDeals(role);
+  const canViewAllLeads = canViewAllDeals(role);
+  const readOnly = isReadOnly(role);
+
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<'leads' | 'clients' | 'schedule'>('leads');
   const [leads, setLeads] = useState(initialLeads);
@@ -484,8 +494,10 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
   const [autoAssign, setAutoAssign] = useState(true);
   const [refreshTrigger, setRefreshTrigger] = useState(0);
 
-  const currentManagerId = organizationId || 'default_manager';
-
+  // КРИТИЧНО: раньше тут стоял organizationId вместо реального managerId (проп из JWT payload.sub) —
+  // из-за этого "Взять в работу"/конвертация в сделку присваивали managerId = id организации,
+  // а не id конкретного менеджера, и лид/сделка потом не находились ни у кого по фильтру managerId.
+  const currentManagerId = managerId || organizationId;
   // Таймер для SLA
   const [now, setNow] = useState(Date.now());
   useEffect(() => {
@@ -493,6 +505,22 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
     return () => clearInterval(int);
   }, []);
 
+  // Автооткрытие досье при возврате с Шахматки (openLeadId)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const openLeadId = params.get('openLeadId');
+    if (openLeadId) {
+      getLeadById(openLeadId).then(fullLead => {
+        if (fullLead) {
+          setSelectedClient(fullLead);
+        }
+      });
+      // Очищаем query-параметр из URL
+      const url = new URL(window.location.href);
+      url.searchParams.delete('openLeadId');
+      window.history.replaceState({}, '', url.pathname + url.search);
+    }
+  }, []);
   // ОБНОВЛЕННАЯ ФУНКЦИЯ REFRESH - теперь вызывает getLeads для получения полных объектов с интересами и логами
   const refreshLeads = async () => {
     const fresh = await getLeads(organizationId);
@@ -571,7 +599,9 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
       unitId,
       interestId: finalInterestId,
       organizationId,
-      managerId: currentManagerId
+      // Сделка должна принадлежать менеджеру-владельцу лида, а не тому, кто нажал "В сделку"
+      // (например, старший менеджер/РОП может конвертировать чужой лид — сделка всё равно закрепляется за его менеджером)
+      managerId: showConvertModal.managerId || currentManagerId
     });
     setLoading(false);
 
@@ -592,7 +622,7 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
     const res = await createClient({ ...leadFormData, organizationId, type: 'LEAD' });
     if (!res.success) {
       if (res.error === 'DUPLICATE') {
-        setLeadError(`⚠️ Обнаружен дубликат! Лид с таким номером уже существует.`);
+        setLeadError(` Обнаружен дубликат! Лид с таким номером уже существует.`);
       } else {
         setLeadError('Произошла ошибка при создании лида');
       }
@@ -608,8 +638,11 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
   };
 
   // Жесткая фильтрация лидов (исключая CONVERTED)
+  // Менеджер видит только свои лиды + ещё не назначенные (managerId пуст) — чтобы можно было взять в работу.
+  // Юрист/РОП/старший менеджер/админ видят все лиды.
   const activeLeads = leads.filter(l => 
-    (l.type === 'LEAD' || !l.type) && l.status !== 'CONVERTED'
+    (l.type === 'LEAD' || !l.type) && l.status !== 'CONVERTED' &&
+    (canViewAllLeads || l.managerId === managerId || !l.managerId)
   );
 
   const getFilteredLeads = (status: string) => {
@@ -672,12 +705,12 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
           <p>База лидов, клиентов и сетка графика приемов</p>
         </div>
         
-        {activeTab === 'leads' && (
+        {activeTab === 'leads' && canManage && !readOnly && (
           <button className={styles.addBtn} onClick={() => setIsAddLeadModalOpen(true)}>
             Добавить лида
           </button>
         )}
-        {activeTab === 'clients' && (
+        {activeTab === 'clients' && canManage && !readOnly && (
           <button className={styles.addBtn} onClick={() => setIsClientModalOpen(true)}>
             Добавить клиента
           </button>
@@ -846,75 +879,86 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
 
                           {/* Кнопки действий */}
                           <div className={styles.cardFooter}>
-                            <div className={styles.cardActionsRow}>
-                              {lead.status === 'NEW' ? (
-                                <button 
-                                  className={`${styles.cardBtn} ${styles.primaryActionBtn}`} 
-                                  style={{ width: '100%' }} 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onAssign(lead.id);
-                                  }}
-                                >
-                                  Взять в работу
-                                </button>
-                              ) : lead.status === 'IN_QUALIFICATION' ? null : lead.status === 'QUALIFIED' ? (
-                                <button 
-                                  className={`${styles.cardBtn} ${styles.primaryActionBtn}`} 
-                                  style={{ width: '100%' }} 
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    onChangeStatus(lead.id, 'IN_PROGRESS');
-                                  }}
-                                >
-                                  Начать работу
-                                </button>
-                              ) : lead.status === 'IN_PROGRESS' ? (
-                                <>
+                            {canManage && !readOnly && (
+                              <div className={styles.cardActionsRow}>
+                                {lead.status === 'NEW' ? (
                                   <button 
-                                    className={`${styles.cardBtn} ${styles.successActionBtn}`} 
-                                    style={{ flex: '1 1 100%' }} 
+                                    className={`${styles.cardBtn} ${styles.primaryActionBtn}`} 
+                                    style={{ width: '100%' }} 
                                     onClick={(e) => {
                                       e.stopPropagation();
-                                      setShowConvertModal(lead);
+                                      onAssign(lead.id);
                                     }}
                                   >
-                                    В сделку
+                                    Взять в работу
                                   </button>
-                                  <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '4px' }}>
-                                    {(lead.callAttempts || 0) < 3 && (
+                                ) : lead.status === 'IN_QUALIFICATION' ? null : lead.status === 'QUALIFIED' ? (
+                                  <button 
+                                    className={`${styles.cardBtn} ${styles.primaryActionBtn}`} 
+                                    style={{ width: '100%' }} 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      onChangeStatus(lead.id, 'IN_PROGRESS');
+                                    }}
+                                  >
+                                    Начать работу
+                                  </button>
+                                ) : lead.status === 'IN_PROGRESS' ? (
+                                  <>
+                                    <button 
+                                      className={`${styles.cardBtn} ${styles.successActionBtn}`} 
+                                      style={{ flex: '1 1 100%' }} 
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowConvertModal(lead);
+                                      }}
+                                    >
+                                      В сделку
+                                    </button>
+                                    <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '4px' }}>
+                                      {(lead.callAttempts || 0) < 3 && (
+                                        <button 
+                                          className={`${styles.cardBtn} ${styles.cardBtnSecondary}`} 
+                                          style={{ flex: 1 }} 
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            onCall(lead.id);
+                                          }}
+                                        >
+                                          Звонок ({(lead.callAttempts || 0)}/3)
+                                        </button>
+                                      )}
                                       <button 
                                         className={`${styles.cardBtn} ${styles.cardBtnSecondary}`} 
                                         style={{ flex: 1 }} 
                                         onClick={(e) => {
                                           e.stopPropagation();
-                                          onCall(lead.id);
+                                          onChangeStatus(lead.id, 'LOST');
                                         }}
                                       >
-                                        Звонок ({(lead.callAttempts || 0)}/3)
+                                        Отказ
                                       </button>
-                                    )}
-                                    <button 
-                                      className={`${styles.cardBtn} ${styles.cardBtnSecondary}`} 
-                                      style={{ flex: 1 }} 
-                                      onClick={(e) => {
-                                        e.stopPropagation();
-                                        onChangeStatus(lead.id, 'LOST');
-                                      }}
-                                    >
-                                      Отказ
-                                    </button>
-                                  </div>
-                                </>
-                              ) : lead.status === 'LOST' ? (
-                                <span className={styles.lostBadge}>Отказ: {lead.lostReason || 'Отказ клиента'}</span>
-                              ) : (
-                                <span className={styles.convertedBadge}>Конвертирован</span>
-                              )}
-                            </div>
+                                    </div>
+                                  </>
+                                ) : lead.status === 'LOST' ? (
+                                  <span className={styles.lostBadge}>Отказ: {lead.lostReason || 'Отказ клиента'}</span>
+                                ) : (
+                                  <span className={styles.convertedBadge}>Конвертирован</span>
+                                )}
+                              </div>
+                            )}
+                            {readOnly && (lead.status === 'LOST' || lead.status === 'CONVERTED') && (
+                              <div className={styles.cardActionsRow}>
+                                {lead.status === 'LOST' ? (
+                                  <span className={styles.lostBadge}>Отказ: {lead.lostReason || 'Отказ клиента'}</span>
+                                ) : (
+                                  <span className={styles.convertedBadge}>Конвертирован</span>
+                                )}
+                              </div>
+                            )}
 
                             {/* Запись на прием */}
-                            {lead.status !== 'NEW' && lead.status !== 'LOST' && (
+                            {lead.status !== 'NEW' && lead.status !== 'LOST' && canManage && !readOnly && (
                               <div style={{ display: 'flex', gap: '8px', width: '100%', marginTop: '8px' }}>
                                 <button 
                                   className={styles.cardBtnSchedule} 
@@ -1116,6 +1160,7 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
           projects={projects}
           onClose={() => setSelectedClient(null)}
           organizationId={organizationId}
+          userRole={userRole}
         />
       )}
 
@@ -1171,6 +1216,7 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
           slot={selectedAppSlot} 
           onClose={() => setSelectedAppSlot(null)} 
           onRefresh={refreshLeads}
+          readOnly={readOnly}
         />
       )}
     </div>

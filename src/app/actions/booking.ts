@@ -2,6 +2,7 @@
 
 import { db as prisma, Prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { logAction } from '@/lib/logger';
 
 export async function createBooking(data: {
   leadId: string;
@@ -9,6 +10,7 @@ export async function createBooking(data: {
   organizationId: string;
   type: 'SOFT' | 'HARD' | 'SERVICE';
   duration: number; // hours for SOFT, days for HARD
+  customExpiresAt?: string | Date;
 }) {
   try {
     // 1. Проверяем, нет ли уже активной брони на это помещение в Booking
@@ -32,7 +34,9 @@ export async function createBooking(data: {
 
     // 2. Рассчитываем expiresAt
     let expiresAt = new Date();
-    if (data.type === 'SOFT') {
+    if (data.customExpiresAt) {
+      expiresAt = new Date(data.customExpiresAt);
+    } else if (data.type === 'SOFT') {
       expiresAt = new Date(Date.now() + data.duration * 60 * 60 * 1000);
     } else if (data.type === 'HARD') {
       expiresAt = new Date(Date.now() + data.duration * 24 * 60 * 60 * 1000);
@@ -102,6 +106,7 @@ export async function createBooking(data: {
       WHERE id = ${data.leadId} AND "status" IN ('NEW', 'IN_QUALIFICATION', 'QUALIFIED')
     `;
 
+    logAction('Создание нового бронирования', { leadId: data.leadId, unitId: data.unitId, type: data.type, duration: data.duration });
     revalidatePath('/shakhmatka');
     revalidatePath('/deals');
     revalidatePath('/clients');
@@ -346,6 +351,7 @@ export async function releaseBooking(data: {
       `;
     }
 
+    logAction('Снятие бронирования вручную', { unitId: data.unitId, userRole: data.userRole });
     revalidatePath('/shakhmatka');
     revalidatePath('/deals');
     revalidatePath('/clients');
@@ -366,7 +372,8 @@ export async function addToWaitingListAction(data: {
   organizationId: string;
 }) {
   try {
-    // Проверяем, нет ли уже этого лида в очереди
+    logAction('Добавление клиента в лист ожидания квартиры', { unitId: data.unitId, leadId: data.leadId });
+    // Проверим, нет ли уже этого лида в очереди
     const existing: any[] = await prisma.$queryRaw`
       SELECT id FROM "WaitingList" 
       WHERE "unitId" = ${data.unitId} AND "leadId" = ${data.leadId} AND "organizationId" = ${data.organizationId}

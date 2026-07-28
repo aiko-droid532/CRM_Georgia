@@ -3,6 +3,7 @@
 import { db as prisma, Prisma } from '@/lib/db';
 import * as XLSX from 'xlsx';
 import { revalidatePath } from 'next/cache';
+import { requireRole, canManageFinance } from '@/lib/roles';
 
 // Получить импортированные банковские транзакции
 export async function getBankTransactions(organizationId: string) {
@@ -121,27 +122,18 @@ async function executeLink(txId: string, scheduleId: string, amount: number, org
             WHERE id = ${deal.unitId}
           `;
         }
-      } else if (paidSchedules.length === 1) {
-        // Первый платеж -> Оплата подтверждена и Первый взнос внесен
+      } else if (paidSchedules.length >= 1) {
+        // Любой оплаченный взнос -> переводим сделку в SUCCESS (Won), а квартиру в SOLD
         await prisma.$executeRaw`
           UPDATE "Deal" 
-          SET status = 'PAYMENT_CONFIRMED'::"DealStatus", "updatedAt" = NOW() 
+          SET status = 'SUCCESS'::"DealStatus", "updatedAt" = NOW() 
           WHERE id = ${deal.id}
         `;
         if (deal.unitId) {
           await prisma.$executeRaw`
             UPDATE "Unit" 
-            SET status = 'DOWN_PAYMENT_RECEIVED'::"UnitStatus", "updatedAt" = NOW() 
+            SET status = 'SOLD'::"UnitStatus", "updatedAt" = NOW() 
             WHERE id = ${deal.unitId}
-          `;
-        }
-      } else {
-        // Промежуточный платеж -> проверяем, чтобы статус сделки был не ниже PAYMENT_CONFIRMED
-        if (['RESERVATION', 'WAITING_PAYMENT', 'CONTRACT', 'CLIENT_CONFIRMATION', 'NEW_LEAD', 'CLARIFICATION'].includes(deal.status)) {
-          await prisma.$executeRaw`
-            UPDATE "Deal" 
-            SET status = 'PAYMENT_CONFIRMED'::"DealStatus", "updatedAt" = NOW() 
-            WHERE id = ${deal.id}
           `;
         }
       }
@@ -255,6 +247,7 @@ export async function manuallyMatchTransactionAction(data: {
   organizationId: string;
 }) {
   try {
+    await requireRole(canManageFinance, 'сопоставление банковской транзакции');
     const txs: any[] = await prisma.$queryRaw`
       SELECT * FROM "BankTransaction" 
       WHERE id = ${data.bankTxId} AND "organizationId" = ${data.organizationId} 
@@ -300,6 +293,7 @@ export async function unmatchTransactionAction(data: {
   organizationId: string;
 }) {
   try {
+    await requireRole(canManageFinance, 'отмена сопоставления транзакции');
     const txs: any[] = await prisma.$queryRaw`
       SELECT * FROM "BankTransaction" 
       WHERE id = ${data.bankTxId} AND "organizationId" = ${data.organizationId} 
@@ -358,9 +352,9 @@ export async function unmatchTransactionAction(data: {
           newDealStatus = 'WAITING_PAYMENT';
           newUnitStatus = 'CONTRACT_SIGNED';
         } else {
-          // Есть часть оплаченных -> статус PAYMENT_CONFIRMED, квартира DOWN_PAYMENT_RECEIVED
-          newDealStatus = 'PAYMENT_CONFIRMED';
-          newUnitStatus = 'DOWN_PAYMENT_RECEIVED';
+          // Есть оплаченные -> статус SUCCESS (Won), квартира SOLD
+          newDealStatus = 'SUCCESS';
+          newUnitStatus = 'SOLD';
         }
 
         await prisma.$executeRaw`
@@ -393,6 +387,7 @@ export async function unmatchTransactionAction(data: {
 // 3. Эмуляция синхронизации с TBC API (PAY-012)
 export async function syncTBCBankAPIAction(organizationId: string) {
   try {
+    await requireRole(canManageFinance, 'синхронизация с банком');
     // Получаем текущие неоплаченные графики
     const pending = await getPendingSchedules(organizationId);
     let importedCount = 0;
@@ -485,6 +480,7 @@ export async function syncTBCBankAPIAction(organizationId: string) {
 // 4. Загрузка Excel выписки CAMT.053 / MT940 (PAY-014)
 export async function importBankStatementAction(formData: FormData, organizationId: string) {
   try {
+    await requireRole(canManageFinance, 'импорт банковской выписки');
     const file = formData.get('file') as File;
     if (!file) {
       return { success: false, error: 'FILE_MISSING', message: 'Файл не выбран.' };

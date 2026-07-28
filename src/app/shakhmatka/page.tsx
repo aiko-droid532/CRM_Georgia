@@ -1,8 +1,11 @@
+export const dynamic = 'force-dynamic';
+
 import { cookies } from 'next/headers';
 import { verifyToken } from '@/lib/auth';
 import { getProjects } from '@/app/actions/units';
 import { getLeadsList, checkAndReleaseExpiredBookings } from '@/app/actions/booking';
 import ShakhmatkaClient from './ShakhmatkaClient';
+import { extractRole } from '@/lib/roles';
 
 export default async function ShakhmatkaPage({
   searchParams,
@@ -14,19 +17,23 @@ export default async function ShakhmatkaPage({
   
   let organizationId = 'default';
   let userRole = 'manager';
+  let managerId = '';
   
   if (token) {
-    const { payload } = await verifyToken(token);
-    if (payload && typeof payload !== 'string') {
-      organizationId = ((payload as any).app_metadata?.organization_id as string) || (payload.sub as string);
-      userRole = (payload.role as string) || 'manager';
+    try {
+      const { payload } = await verifyToken(token);
+      if (payload && typeof payload !== 'string') {
+        organizationId = ((payload as any).app_metadata?.organization_id as string) || '741be209-ad6f-4483-92ee-298a36899bcf';
+        userRole = extractRole(payload);
+        managerId = (payload.sub as string) || '';
+      }
+    } catch (e) {
+      console.error('Token verification failed:', e);
     }
   }
 
-  // Автоматически проверяем и снимаем просроченные брони при входе на шахматку
   await checkAndReleaseExpiredBookings();
 
-  // Загружаем данные параллельно
   const [projects, leads] = await Promise.all([
     getProjects(organizationId),
     getLeadsList(organizationId)

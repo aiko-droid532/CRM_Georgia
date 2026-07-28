@@ -18,29 +18,30 @@ import { useRouter } from 'next/navigation';
 
 type StageType = 'normal' | 'group' | 'child';
 
-// Строго 14 этапов в соответствии с разделом 3 ОП.pdf (страница 13)
+// Строго 17 этапов в соответствии с Process flow.xlsx
 const STAGES: { id: string; label: string; color: string; type: StageType; children?: string[] }[] = [
   { id: 'NEW_LEAD', label: 'Новый лид', color: '#6366f1', type: 'normal' },
-  { id: 'CLARIFICATION', label: 'Уточнение', color: '#818cf8', type: 'normal' },
+  { id: 'CLARIFICATION', label: 'Обработанный лид', color: '#818cf8', type: 'normal' },
 
-  // Группа Звонок (одна колонка в Kanban, ТЗ 8.1.2)
-  { id: 'CALL_GROUP', label: 'Звонок', color: '#3b82f6', type: 'group', children: ['CALL', 'SECOND_CALL', 'THIRD_CALL'] },
-  { id: 'CALL', label: '1-й звонок', color: '#3b82f6', type: 'child' },
-  { id: 'SECOND_CALL', label: 'Второй звонок', color: '#2563eb', type: 'child' },
-  { id: 'THIRD_CALL', label: 'Третий звонок', color: '#1d4ed8', type: 'child' },
+  // Колл-центр — три отдельные горизонтальные колонки
+  { id: 'CALL', label: 'Коллцентр 1', color: '#3b82f6', type: 'normal' },
+  { id: 'SECOND_CALL', label: 'Коллцентр 2', color: '#2563eb', type: 'normal' },
+  { id: 'THIRD_CALL', label: 'Обработанный Звонок', color: '#1d4ed8', type: 'normal' },
 
-  { id: 'CONSULTATION', label: 'Личная консультация', color: '#f59e0b', type: 'normal' },
-  { id: 'PRE_RESERVATION', label: 'Бронирование (Soft)', color: '#fbbf24', type: 'normal' },
-  { id: 'RESERVATION', label: 'Предв. бронирование (Hard)', color: '#f97316', type: 'normal' },
-  { id: 'CONTRACT_PREPARATION', label: 'Готовность к сделке', color: '#a855f7', type: 'normal' },
-  { id: 'CONTRACT', label: 'Документ сформирован', color: '#0d9488', type: 'normal' },
-  { id: 'CLIENT_CONFIRMATION', label: 'Подтверждено клиентом', color: '#059669', type: 'normal' },
+  { id: 'CONSULTATION', label: 'Распределён', color: '#f59e0b', type: 'normal' },
+  { id: 'PRE_RESERVATION', label: '1-й звонок (МП)', color: '#fbbf24', type: 'normal' },
+  { id: 'RESERVATION', label: '2-й звонок (МП)', color: '#f97316', type: 'normal' },
+  { id: 'CONTRACT_PREPARATION', label: '3-й звонок (МП)', color: '#a855f7', type: 'normal' },
+  { id: 'MEETING', label: 'Встреча назначена', color: '#8b5cf6', type: 'normal' },
+  { id: 'CLIENT_CONFIRMATION', label: 'Встреча проведена', color: '#059669', type: 'normal' },
+  { id: 'CONTRACT', label: 'Запрошено бронирование', color: '#0d9488', type: 'normal' },
+  { id: 'PAYMENT_CONFIRMED', label: 'Бронирование подтверждено', color: '#10b981', type: 'normal' },
+  { id: 'DEAL', label: 'Договор', color: '#0ea5e9', type: 'normal' },
   { id: 'WAITING_PAYMENT', label: 'Ожидание оплаты', color: '#ec4899', type: 'normal' },
-  { id: 'PAYMENT_CONFIRMED', label: 'Оплата подтверждена', color: '#db2777', type: 'normal' },
 
-  { id: 'SUCCESS', label: 'Won (успешно)', color: '#15803d', type: 'normal' },
-  { id: 'FAILED', label: 'Lost (отказ)', color: '#ef4444', type: 'normal' },
-  { id: 'CANCELLED', label: 'Cancelled (расторжение)', color: '#64748b', type: 'normal' }
+  { id: 'SUCCESS', label: 'WON/Продано', color: '#15803d', type: 'normal' },
+  // FAILED и CANCELLED объединены в одну колонку "Cancelled"
+  { id: 'LOST_CANCELLED', label: 'Cancelled', color: '#94a3b8', type: 'group', children: ['FAILED', 'CANCELLED'] },
 ];
 
 // Порядковые номера статусов для проверки направления
@@ -54,26 +55,36 @@ const STATUS_ORDER: Record<string, number> = {
   PRE_RESERVATION: 6,
   RESERVATION: 7,
   CONTRACT_PREPARATION: 8,
-  CONTRACT: 9,
+  MEETING: 9,
   CLIENT_CONFIRMATION: 10,
-  WAITING_PAYMENT: 11,
+  CONTRACT: 11,
   PAYMENT_CONFIRMED: 12,
-  SUCCESS: 13,
-  FAILED: 98,
-  CANCELLED: 99,
+  DEAL: 13,
+  WAITING_PAYMENT: 14,
+  SUCCESS: 15,
+  FAILED: 16,
+  CANCELLED: 17
 };
 
 // Финальные статусы — из них нельзя двигаться никуда
-const FINAL_STATUSES = ['SUCCESS', 'FAILED', 'CANCELLED'];
+const FINAL_STATUSES = ['SUCCESS', 'FAILED', 'CANCELLED', 'LOST_CANCELLED'];
 
 // Статусы свободной зоны (до и включая звонки)
 const FREE_ZONE = ['NEW_LEAD', 'CLARIFICATION', 'CALL', 'SECOND_CALL', 'THIRD_CALL'];
 
 // Статусы строгой зоны (после Soft брони включительно)
-const STRICT_ZONE = ['PRE_RESERVATION', 'RESERVATION', 'CONTRACT_PREPARATION', 'CONTRACT', 'CLIENT_CONFIRMATION', 'WAITING_PAYMENT', 'PAYMENT_CONFIRMED'];
+const STRICT_ZONE = ['PRE_RESERVATION', 'RESERVATION', 'MEETING', 'CONTRACT_PREPARATION', 'CONTRACT', 'CLIENT_CONFIRMATION', 'WAITING_PAYMENT'];
 
 function isTransitionAllowed(from: string, to: string): { allowed: boolean; reason?: string } {
-  // Из финальных статусов — никуда
+  // Из SUCCESS (закрытая сделка) разрешено переносить ТОЛЬКО в CANCELLED (Расторжение)
+  if (from === 'SUCCESS') {
+    if (to === 'CANCELLED') {
+      return { allowed: true };
+    }
+    return { allowed: false, reason: 'Закрытую сделку можно переместить только в "Расторжение" (Cancelled)' };
+  }
+
+  // Из остальных финальных статусов — никуда
   if (FINAL_STATUSES.includes(from)) {
     return { allowed: false, reason: `Сделка в финальном статусе "${from}" — движение заблокировано` };
   }
@@ -84,7 +95,7 @@ function isTransitionAllowed(from: string, to: string): { allowed: boolean; reas
   }
 
   // В Lost и Cancelled — можно из любого статуса
-  if (to === 'FAILED' || to === 'CANCELLED') {
+  if (to === 'FAILED' || to === 'CANCELLED' || to === 'LOST_CANCELLED') {
     return { allowed: true };
   }
 
@@ -133,15 +144,29 @@ function isTransitionAllowed(from: string, to: string): { allowed: boolean; reas
   return { allowed: false, reason: 'Этот переход не разрешён' };
 }
 
+import { canManageDeals, canViewAllDeals, isReadOnly, UserRole } from '@/lib/roles';
+
 interface DealsClientProps {
   initialDeals: any[];
   organizationId: string;
+  userRole?: string;
+  managerId?: string;
 }
 
-export default function DealsClient({ initialDeals, organizationId }: DealsClientProps) {
+export default function DealsClient({ initialDeals, organizationId, userRole = 'manager', managerId = '' }: DealsClientProps) {
+  const role = userRole as UserRole;
+  const canManage = canManageDeals(role);
+  const canViewAll = canViewAllDeals(role);
+  const readOnly = isReadOnly(role);
+
+  // Менеджер видит только свои сделки (плюс ещё не назначенные — managerId пуст)
+  const filteredInitialDeals = canViewAll
+    ? initialDeals
+    : initialDeals.filter(d => d.managerId === managerId || !d.managerId);
+
   const router = useRouter();
-  const [deals, setDeals] = useState(initialDeals);
-  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ CALL_GROUP: true });
+  const [deals, setDeals] = useState(filteredInitialDeals);
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({ LOST_CANCELLED: false });
   const [draggingDealStatus, setDraggingDealStatus] = useState<string | null>(null);
   const [undoActions, setUndoActions] = useState<{
     id: string;
@@ -154,22 +179,7 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
   }[]>([]);
   const undoTimersRef = useRef<Record<string, { timer: NodeJS.Timeout; interval: NodeJS.Timeout }>>({});
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const scrollMirrorRef = useRef<HTMLDivElement>(null);
-  const scrollWidthRef = useRef<HTMLDivElement>(null);
   const scrollAnimRef = useRef<number | null>(null);
-
-  // Синхронизируем ширину зеркального скроллбара с реальной шириной канбана
-  useEffect(() => {
-    const syncWidth = () => {
-      if (scrollContainerRef.current && scrollWidthRef.current) {
-        scrollWidthRef.current.style.width = scrollContainerRef.current.scrollWidth + 'px';
-      }
-    };
-    syncWidth();
-    const observer = new ResizeObserver(syncWidth);
-    if (scrollContainerRef.current) observer.observe(scrollContainerRef.current);
-    return () => observer.disconnect();
-  }, [deals]);
 
   const startAutoScroll = (clientX: number) => {
     if (scrollAnimRef.current) cancelAnimationFrame(scrollAnimRef.current);
@@ -206,18 +216,6 @@ export default function DealsClient({ initialDeals, organizationId }: DealsClien
     if (scrollAnimRef.current) {
       cancelAnimationFrame(scrollAnimRef.current);
       scrollAnimRef.current = null;
-    }
-  };
-
-  const handleMainScroll = () => {
-    if (scrollMirrorRef.current && scrollContainerRef.current) {
-      scrollMirrorRef.current.scrollLeft = scrollContainerRef.current.scrollLeft;
-    }
-  };
-
-  const handleMirrorScroll = () => {
-    if (scrollContainerRef.current && scrollMirrorRef.current) {
-      scrollContainerRef.current.scrollLeft = scrollMirrorRef.current.scrollLeft;
     }
   };
 
@@ -298,7 +296,7 @@ const [deleteReason, setDeleteReason] = useState('');
 const [customDeleteReason, setCustomDeleteReason] = useState('');
 
   useEffect(() => {
-    setDeals(initialDeals);
+    setDeals(filteredInitialDeals);
   }, [initialDeals]);
 
   const handleDragStart = (e: React.DragEvent, dealId: string) => {
@@ -327,7 +325,7 @@ const [customDeleteReason, setCustomDeleteReason] = useState('');
     const deal = deals.find((d: any) => d.id === dealId);
     if (!deal) return;
 
-    const targetStage = targetStageId === 'CALL_GROUP' ? 'CALL' : targetStageId;
+    const targetStage = targetStageId;
 
     const { allowed, reason } = isTransitionAllowed(deal.status, targetStage);
     if (!allowed) {
@@ -335,7 +333,22 @@ const [customDeleteReason, setCustomDeleteReason] = useState('');
       return;
     }
 
-    const previousStatus = STRICT_ZONE.includes(deal.status) && targetStage === 'CONSULTATION'
+    let cancelReasonText = '';
+    let resolvedStage = targetStage;
+
+    if (targetStage === 'LOST_CANCELLED') {
+      resolvedStage = 'CANCELLED';
+    }
+
+    if (resolvedStage === 'CANCELLED') {
+      const userInput = prompt('Укажите причину расторжения сделки:');
+      if (userInput === null) {
+        return;
+      }
+      cancelReasonText = userInput.trim() || 'Причина не указана';
+    }
+
+    const previousStatus = STRICT_ZONE.includes(deal.status) && resolvedStage === 'CONSULTATION'
       ? deal.status
       : undefined;
 
@@ -343,12 +356,12 @@ const [customDeleteReason, setCustomDeleteReason] = useState('');
     setDeals((prev: any[]) =>
       prev.map((d: any) => d.id === dealId ? {
         ...d,
-        status: targetStage,
+        status: resolvedStage,
         ...(previousStatus ? { previousStatus } : {})
       } : d)
     );
 
-    const res = await updateDealStatus(dealId, targetStage, previousStatus);
+    const res = await updateDealStatus(dealId, resolvedStage, previousStatus, false, cancelReasonText);
     if (!res.success) {
       alert(res.message || 'Ошибка при обновлении статуса сделки в БД!');
       setDeals(originalDeals);
@@ -380,6 +393,14 @@ const loadDealExtras = async (dealId: string) => {
 // Обновленный handleCardClick
 const handleCardClick = async (deal: any) => {
   setSelectedDeal(deal);
+  fetch('/api/logs', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      actionName: `Пользователь открыл сделку по квартире №${deal.unitNumber}`,
+      details: { dealId: deal.id, client: deal.clientName, price: deal.unitPrice, status: deal.status }
+    })
+  }).catch(() => {});
   setMortgageBank(deal.mortgageBank || '');
   setMortgageStatus(deal.mortgageStatus || 'NONE');
   setMortgageComment(deal.mortgageComment || '');
@@ -558,19 +579,9 @@ const handleSetPrimaryClient = async (leadId: string) => {
         <p style={{color: '#64748b', fontSize: '0.95rem'}}></p>
       </header>
 
-      {/* Зеркальный скроллбар над колонками */}
-      <div
-        ref={scrollMirrorRef}
-        onScroll={handleMirrorScroll}
-        className={styles.kanbanScrollMirror}
-      >
-        <div ref={scrollWidthRef} className={styles.kanbanScrollMirrorInner} />
-      </div>
-
       <div
         className={styles.kanbanScroll}
         ref={scrollContainerRef}
-        onScroll={handleMainScroll}
         onDragOver={(e) => { e.preventDefault(); startAutoScroll(e.clientX); }}
         onDragLeave={stopAutoScroll}
       >
@@ -588,7 +599,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
 
           const conversion = calculateConversion(stageDeals.length);
           // По ТЗ деньги суммируем только со стадии Личная консультация (CONSULTATION, ранг >= 5)
-          const isFinancialStage = stage.id !== 'NEW_LEAD' && stage.id !== 'CLARIFICATION' && stage.id !== 'CALL_GROUP';
+          const isFinancialStage = !['NEW_LEAD', 'CLARIFICATION', 'CALL', 'SECOND_CALL', 'THIRD_CALL', 'LOST_CANCELLED'].includes(stage.id);
           const stageRevenue = isFinancialStage
             ? stageDeals.reduce((sum, deal) => sum + (deal.unit?.price || 0), 0)
             : 0;
@@ -596,7 +607,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
           return (
             <div
               key={stage.id}
-              className={`${styles.verticalStage} ${stage.type === 'group' ? styles.groupStage : ''}`}
+              className={`${styles.verticalStage} ${stage.type === 'group' ? styles.groupStage : ''} ${['CALL', 'SECOND_CALL', 'THIRD_CALL'].includes(stage.id) ? styles.callStage : ''} ${stage.id === 'LOST_CANCELLED' ? styles.lostStage : ''}`}
               style={{
                 opacity: (() => {
                   if (!draggingDealStatus) return 1;
@@ -620,7 +631,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
                 <div className={styles.stageMainInfo}>
                   {stage.type === 'group' && (
                     <span className={styles.expandArrow}>
-                      {expandedGroups[stage.id] ? '▼' : '▶'}
+                      {expandedGroups[stage.id] ? '' : ''}
                     </span>
                   )}
                   <h4>{stage.label}</h4>
@@ -654,9 +665,9 @@ const handleSetPrimaryClient = async (leadId: string) => {
                       <div
                         key={deal.id}
                         className={styles.dealCardVertical}
-                        draggable
-                        onDragStart={(e) => handleDragStart(e, deal.id)}
-                        onDragEnd={handleDragEnd}
+                        draggable={canManage && !readOnly}
+                        onDragStart={canManage && !readOnly ? (e) => handleDragStart(e, deal.id) : undefined}
+                        onDragEnd={canManage && !readOnly ? handleDragEnd : undefined}
                         onClick={() => handleCardClick(deal)}
                         style={prevStatusColor ? {
                           borderLeft: `4px solid ${prevStatusColor}`,
@@ -704,7 +715,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
                               className={styles.quickCallBtn}
                               onClick={(e) => handleQuickCall(e, deal)}
                             >
-                              ☎️ Набрать
+                               Набрать
                             </button>
                           </div>
                         )}
@@ -721,7 +732,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
                               borderRadius: '4px',
                               textTransform: 'uppercase'
                             }}>
-                              🏦 {deal.mortgageBank}: {deal.mortgageStatus === 'APPROVED' ? 'Одобрено' : deal.mortgageStatus === 'REJECTED' ? 'Отказ' : 'На рассмотрении'}
+                               {deal.mortgageBank}: {deal.mortgageStatus === 'APPROVED' ? 'Одобрено' : deal.mortgageStatus === 'REJECTED' ? 'Отказ' : 'На рассмотрении'}
                             </span>
                           </div>
                         )}
@@ -763,9 +774,9 @@ const handleSetPrimaryClient = async (leadId: string) => {
                               <div
                                 key={deal.id}
                                 className={styles.dealCardVertical}
-                                draggable
-                                onDragStart={(e) => handleDragStart(e, deal.id)}
-                                onDragEnd={handleDragEnd}
+                                draggable={canManage && !readOnly}
+                                onDragStart={canManage && !readOnly ? (e) => handleDragStart(e, deal.id) : undefined}
+                                onDragEnd={canManage && !readOnly ? handleDragEnd : undefined}
                                 onClick={() => handleCardClick(deal)}
                               >
                                 <div className={styles.cardHeaderSmall}>
@@ -806,7 +817,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
           <div className={styles.modal} onClick={(e) => e.stopPropagation()}>
             <header className={styles.modalHeader}>
               <h2 style={{fontWeight: 800, color: '#0f172a', fontSize: '1.7rem'}}>Карточка сделки #{selectedDeal.id.slice(0, 8)}</h2>
-              <button className={styles.closeBtn} onClick={() => setSelectedDeal(null)}>✕</button>
+              <button className={styles.closeBtn} onClick={() => setSelectedDeal(null)}></button>
             </header>
 
             <main className={styles.modalBody}>
@@ -814,22 +825,18 @@ const handleSetPrimaryClient = async (leadId: string) => {
   <div className={styles.infoSection}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
       <h3 style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: '5px', margin: 0 }}>
-        👤 Данные клиента
+         Данные клиента
       </h3>
       <button
         className={styles.quickCallBtn}
         onClick={() => {
-          if (showAddClientModal) {
-            setShowAddClientModal(false);
-          } else {
-            setSearchQuery('');
-            setSearchResults([]);
-            setSelectedClient(null);
-            setIsPrimaryClient(false);
-            setShowAddClientModal(true);
-          }
+          setSearchQuery('');
+          setSearchResults([]);
+          setSelectedClient(null);
+          setIsPrimaryClient(false);
+          setShowAddClientModal(true);
         }}
-        style={{ fontSize: '1.2rem', padding: '4px 12px', transition: 'transform 0.2s', transform: showAddClientModal ? 'rotate(45deg)' : 'none' }}
+        style={{ fontSize: '1.2rem', padding: '4px 12px' }}
       >
         +
       </button>
@@ -869,97 +876,29 @@ const handleSetPrimaryClient = async (leadId: string) => {
                 }
               }}
             >
-              ✕
+              
             </button>
           </div>
         </div>
       </div>
     ))}
-
-    {/* Inline-панель добавления участника */}
-    <div className={`${styles.addParticipantPanel} ${showAddClientModal ? styles.open : ''}`}>
-      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginTop: '4px' }}>
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
-          <input
-            type="text"
-            className={styles.modalInput}
-            placeholder="Имя, телефон или email..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearchLeads()}
-          />
-          <button className={styles.quickCallBtn} onClick={handleSearchLeads}>🔍</button>
-        </div>
-
-        {searchLoading && <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Поиск...</p>}
-
-        {searchResults.length > 0 && (
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', maxHeight: '160px', overflowY: 'auto', marginBottom: '12px', background: 'white' }}>
-            {searchResults.map(lead => (
-              <div
-                key={lead.id}
-                style={{ padding: '10px 12px', cursor: 'pointer', background: selectedClient?.id === lead.id ? '#eff6ff' : 'white', borderBottom: '1px solid #f1f5f9', fontSize: '0.9rem' }}
-                onClick={() => setSelectedClient(lead)}
-              >
-                <strong>{lead.name}</strong> — {lead.phone}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {selectedClient && (
-          <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '0.88rem' }}>
-            ✅ <strong>{selectedClient.name}</strong> — {selectedClient.phone}
-            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px', fontWeight: 400 }}>
-              <input type="checkbox" checked={isPrimaryClient} onChange={e => setIsPrimaryClient(e.target.checked)} />
-              Сделать основным клиентом
-            </label>
-          </div>
-        )}
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '10px 0' }}>
-          <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
-          <span style={{ color: '#94a3b8', fontSize: '0.78rem' }}>или</span>
-          <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
-        </div>
-
-        <button
-          className={styles.quickCallBtn}
-          style={{ width: '100%', marginBottom: '10px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', fontWeight: 700 }}
-          onClick={() => setShowRegisterNewClient(true)}
-        >
-          ➕ Зарегистрировать нового клиента
-        </button>
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button className={styles.quickCallBtn} onClick={() => setShowAddClientModal(false)}>Отмена</button>
-          <button className={styles.saveMortgageBtn} onClick={handleAddClient} disabled={!selectedClient}>
-            Добавить
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 
   {/* БЛОК ОБЪЕКТ НЕДВИЖИМОСТИ С ПЛЮСИКОМ */}
   <div className={styles.infoSection}>
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
       <h3 style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: '5px', margin: 0 }}>
-        🏢 Объект недвижимости
+         Объект недвижимости
       </h3>
       <button
         className={styles.quickCallBtn}
         onClick={() => {
-          if (showAddUnitModal) {
-            setShowAddUnitModal(false);
-          } else {
-            setSearchQuery('');
-            setSearchResults([]);
-            setSelectedUnit(null);
-            setShowAddUnitModal(true);
-          }
+          setSearchQuery('');
+          setSearchResults([]);
+          setSelectedUnit(null);
+          setShowAddUnitModal(true);
         }}
-        style={{ fontSize: '1.2rem', padding: '4px 12px', transition: 'transform 0.2s', transform: showAddUnitModal ? 'rotate(45deg)' : 'none' }}
+        style={{ fontSize: '1.2rem', padding: '4px 12px' }}
       >
         +
       </button>
@@ -968,11 +907,23 @@ const handleSetPrimaryClient = async (leadId: string) => {
     {/* Основной объект (из сделки) */}
     {selectedDeal.unit ? (
       <div style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '8px' }}>
-        <div>
-          <strong>{selectedDeal.unit.projectName || 'ЖК'}</strong> – №{selectedDeal.unit.number}
-          <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
-            {selectedDeal.unit.rooms} комн. • {selectedDeal.unit.area} м² • ${selectedDeal.unit.price?.toLocaleString()}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div>
+            <strong>{selectedDeal.unit.projectName || 'ЖК'}</strong> – №{selectedDeal.unit.number}
+            <div style={{ fontSize: '0.85rem', color: '#64748b' }}>
+              {selectedDeal.unit.rooms} комн. • {selectedDeal.unit.area} м² • ${selectedDeal.unit.price?.toLocaleString()}
+            </div>
           </div>
+          <a
+            href={`/shakhmatka?highlightUnitId=${selectedDeal.unit.id}`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className={styles.quickCallBtn}
+            style={{ textDecoration: 'none', fontSize: '0.8rem' }}
+            title="Открыть карточку помещения"
+          >
+             В шахматке
+          </a>
         </div>
       </div>
     ) : (
@@ -989,73 +940,39 @@ const handleSetPrimaryClient = async (leadId: string) => {
               {unit.rooms} комн. • {unit.area} м² • ${Number(unit.price).toLocaleString()}
             </div>
           </div>
-          <button
-            className={styles.quickCallBtn}
-            style={{ background: '#fee2e2', color: '#ef4444' }}
-            onClick={() => setShowRemoveUnitModal({ id: unit.id, number: unit.number })}
-          >
-            Удалить
-          </button>
+          <div style={{ display: 'flex', gap: '6px' }}>
+            <a
+              href={`/shakhmatka?highlightUnitId=${unit.unitId}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className={styles.quickCallBtn}
+              style={{ textDecoration: 'none', fontSize: '0.8rem' }}
+              title="Открыть карточку помещения"
+            >
+               В шахматке
+            </a>
+            <button
+              className={styles.quickCallBtn}
+              style={{ background: '#fee2e2', color: '#ef4444' }}
+              onClick={() => setShowRemoveUnitModal({ id: unit.id, number: unit.number })}
+            >
+              Удалить
+            </button>
+          </div>
         </div>
       </div>
     ))}
-
-    {/* Inline-панель добавления объекта */}
-    <div className={`${styles.addParticipantPanel} ${showAddUnitModal ? styles.open : ''}`}>
-      <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px', marginTop: '4px' }}>
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '12px' }}>
-          <input
-            type="text"
-            className={styles.modalInput}
-            placeholder="Номер квартиры или ЖК..."
-            value={searchQuery}
-            onChange={e => setSearchQuery(e.target.value)}
-            onKeyDown={e => e.key === 'Enter' && handleSearchUnits()}
-          />
-          <button className={styles.quickCallBtn} onClick={handleSearchUnits}>🔍</button>
-        </div>
-
-        {searchLoading && <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Поиск...</p>}
-
-        {searchResults.length > 0 && (
-          <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', maxHeight: '160px', overflowY: 'auto', marginBottom: '12px', background: 'white' }}>
-            {searchResults.map(unit => (
-              <div
-                key={unit.id}
-                style={{ padding: '10px 12px', cursor: 'pointer', background: selectedUnit?.id === unit.id ? '#eff6ff' : 'white', borderBottom: '1px solid #f1f5f9', fontSize: '0.9rem' }}
-                onClick={() => setSelectedUnit(unit)}
-              >
-                <strong>{unit.projectName}</strong> – №{unit.number} – ${Number(unit.price).toLocaleString()}
-              </div>
-            ))}
-          </div>
-        )}
-
-        {selectedUnit && (
-          <div style={{ marginBottom: '12px', padding: '8px 12px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0', fontSize: '0.88rem' }}>
-            ✅ <strong>{selectedUnit.projectName}</strong> – №{selectedUnit.number}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <button className={styles.quickCallBtn} onClick={() => setShowAddUnitModal(false)}>Отмена</button>
-          <button className={styles.saveMortgageBtn} onClick={handleAddUnit} disabled={!selectedUnit}>
-            Добавить
-          </button>
-        </div>
-      </div>
-    </div>
   </div>
 
   {/* Блок Ипотека (остается без изменений) */}
   <div className={styles.infoSection} style={{ background: 'rgba(59, 130, 246, 0.03)', border: '1px solid rgba(59, 130, 246, 0.1)', padding: '15px', borderRadius: '10px' }}>
     <h3 style={{ fontWeight: 800, marginBottom: '12px', color: '#2563eb', display: 'flex', alignItems: 'center', gap: '8px' }}>
-      🏦 Блок «Ипотека» (Статус одобрения)
+       Блок «Ипотека» (Статус одобрения)
     </h3>
 
     <div style={{ display: 'flex', gap: '15px', marginBottom: '12px' }}>
       <div style={{ flex: 1 }}>
-        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 800, fontSize: '1.25rem', color: '#475569', marginBottom: '5px' }}>Выбор банка</label>
+        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.8rem', color: '#475569', marginBottom: '5px' }}>Выбор банка</label>
         <select
           className={styles.modalInput}
           value={mortgageBank}
@@ -1070,7 +987,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
       </div>
 
       <div style={{ flex: 1 }}>
-        <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 800, fontSize: '1.25rem', color: '#475569', marginBottom: '5px' }}>Статус одобрения</label>
+        <label style={{ display: 'block', fontWeight: 800, fontSize: '0.8rem', color: '#475569', marginBottom: '5px' }}>Статус одобрения</label>
         <select
           className={styles.modalInput}
           value={mortgageStatus}
@@ -1086,7 +1003,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
     </div>
 
     <div style={{ marginBottom: '15px' }}>
-      <label style={{ display: 'block', fontSize: '0.8rem', fontWeight: 800, fontSize: '1.25rem', color: '#475569', marginBottom: '5px' }}>Комментарий по ипотеке</label>
+      <label style={{ display: 'block', fontWeight: 800, fontSize: '0.8rem', color: '#475569', marginBottom: '5px' }}>Комментарий по ипотеке</label>
       <textarea
         className={styles.modalInput}
         style={{ minHeight: '60px' }}
@@ -1101,31 +1018,159 @@ const handleSetPrimaryClient = async (leadId: string) => {
       onClick={handleSaveMortgage}
       disabled={loading}
     >
-      {loading ? 'Сохранение...' : '💾 Сохранить статус ипотеки'}
+      {loading ? 'Сохранение...' : ' Сохранить статус ипотеки'}
     </button>
   </div>
 </main>
 
-{/* Модалка регистрации нового клиента */}
+{/* Модалка добавления клиента */}
+{showAddClientModal && (
+  <div className={styles.overlay} onClick={() => setShowAddClientModal(false)}>
+    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: '500px', maxHeight: '90vh', display: 'flex', flexDirection: 'column' }}>
+      <header className={styles.modalHeader}>
+        <h2 style={{ fontWeight: 800 }}> Добавить участника сделки</h2>
+        <button className={styles.closeBtn} onClick={() => setShowAddClientModal(false)}></button>
+      </header>
+      <div style={{ overflowY: 'auto', flex: 1, padding: '0 4px' }}>
+
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+        <input
+          type="text"
+          className={styles.modalInput}
+          placeholder="Имя, телефон или email..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+        />
+        <button className={styles.quickCallBtn} onClick={handleSearchLeads}> Поиск</button>
+      </div>
+
+      {searchLoading && <p>Поиск...</p>}
+
+      {searchResults.length > 0 && (
+        <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', maxHeight: '250px', overflowY: 'auto', marginBottom: '16px' }}>
+          {searchResults.map(lead => (
+            <div
+              key={lead.id}
+              style={{ padding: '12px', cursor: 'pointer', background: selectedClient?.id === lead.id ? '#eff6ff' : 'white', borderBottom: '1px solid #e2e8f0' }}
+              onClick={() => setSelectedClient(lead)}
+            >
+              <strong>{lead.name}</strong> – {lead.phone}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {selectedClient && (
+        <div style={{ marginBottom: '16px', padding: '10px', background: '#f0fdf4', borderRadius: '8px', border: '1px solid #bbf7d0' }}>
+          <strong>Выбран:</strong> {selectedClient.name} — {selectedClient.phone}
+        </div>
+      )}
+
+      {selectedClient && (
+        <div style={{ marginBottom: '16px' }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input type="checkbox" checked={isPrimaryClient} onChange={e => setIsPrimaryClient(e.target.checked)} />
+            Сделать основным клиентом (на кого оформляется договор)
+          </label>
+        </div>
+      )}
+
+      {/* Разделитель */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '10px', margin: '16px 0' }}>
+        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+        <span style={{ color: '#94a3b8', fontSize: '0.8rem' }}>или</span>
+        <div style={{ flex: 1, height: '1px', background: '#e2e8f0' }} />
+      </div>
+
+      <button
+        className={styles.quickCallBtn}
+        style={{ width: '100%', marginBottom: '16px', background: '#eff6ff', color: '#2563eb', border: '1px solid #bfdbfe', fontWeight: 700 }}
+        onClick={() => setShowRegisterNewClient(true)}
+      >
+         Зарегистрировать нового клиента
+      </button>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+        <button className={styles.quickCallBtn} onClick={() => setShowAddClientModal(false)}>Отмена</button>
+        <button className={styles.saveMortgageBtn} onClick={handleAddClient} disabled={!selectedClient}>
+          Добавить
+        </button>
+      </div>
+      </div>
+    </div>
+  </div>
+)}
+
+{/* Модалка регистрации нового клиента поверх модалки добавления участника */}
 {showRegisterNewClient && (
   <LeadModal
     onClose={() => setShowRegisterNewClient(false)}
     organizationId={organizationId}
-    onSuccess={async () => {}}
+    onSuccess={async () => {
+      // После создания — ничего не делаем здесь, всё обрабатывается в onCreated
+    }}
     onCreated={async (newClientId: string, newClientName: string, newClientPhone: string) => {
+      // Закрываем модалку регистрации
       setShowRegisterNewClient(false);
+      // Автоматически выбираем нового клиента в модалке добавления участника
       setSelectedClient({ id: newClientId, name: newClientName, phone: newClientPhone });
     }}
   />
 )}
 
+{/* Модалка добавления объекта */}
+{showAddUnitModal && (
+  <div className={styles.overlay} onClick={() => setShowAddUnitModal(false)}>
+    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: '500px' }}>
+      <header className={styles.modalHeader}>
+        <h2 style={{ fontWeight: 800 }}> Добавить объект недвижимости</h2>
+        <button className={styles.closeBtn} onClick={() => setShowAddUnitModal(false)}></button>
+      </header>
+
+      <div style={{ display: 'flex', gap: '10px', marginBottom: '16px' }}>
+        <input
+          type="text"
+          className={styles.modalInput}
+          placeholder="Номер квартиры или ЖК..."
+          value={searchQuery}
+          onChange={e => setSearchQuery(e.target.value)}
+        />
+        <button className={styles.quickCallBtn} onClick={handleSearchUnits}> Поиск</button>
+      </div>
+
+      {searchLoading && <p>Поиск...</p>}
+
+      {searchResults.length > 0 && (
+        <div style={{ border: '1px solid #e2e8f0', borderRadius: '12px', maxHeight: '250px', overflowY: 'auto', marginBottom: '16px' }}>
+          {searchResults.map(unit => (
+            <div
+              key={unit.id}
+              style={{ padding: '12px', cursor: 'pointer', background: selectedUnit?.id === unit.id ? '#eff6ff' : 'white', borderBottom: '1px solid #e2e8f0' }}
+              onClick={() => setSelectedUnit(unit)}
+            >
+              <strong>{unit.projectName}</strong> – №{unit.number} – ${Number(unit.price).toLocaleString()}
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+        <button className={styles.quickCallBtn} onClick={() => setShowAddUnitModal(false)}>Отмена</button>
+        <button className={styles.saveMortgageBtn} onClick={handleAddUnit} disabled={!selectedUnit}>
+          Добавить
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
 {/* Модалка удаления объекта с причиной */}
 {showRemoveUnitModal && (
-  <div className={styles.overlaySmall} onClick={() => setShowRemoveUnitModal(null)}>
-    <div className={styles.modalSmall} onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
+  <div className={styles.overlay} onClick={() => setShowRemoveUnitModal(null)}>
+    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: '400px' }}>
       <header className={styles.modalHeader}>
-        <h2 style={{ fontWeight: 800 }}>❌ Удаление объекта №{showRemoveUnitModal.number}</h2>
-        <button className={styles.closeBtn} onClick={() => setShowRemoveUnitModal(null)}>✕</button>
+        <h2 style={{ fontWeight: 800 }}> Удаление объекта №{showRemoveUnitModal.number}</h2>
+        <button className={styles.closeBtn} onClick={() => setShowRemoveUnitModal(null)}></button>
       </header>
 
       <p style={{ marginBottom: '16px', color: '#64748b' }}>Укажите причину отказа от объекта:</p>

@@ -14,12 +14,12 @@
   transition: margin-right 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Когда side-panel открыт - контент сдвигается влево */
+/* Когда side-panel открыт - контент НЕ сдвигается, так как карточка полноэкранная */
 .mainContentShifted {
-  margin-right: 380px;
+  margin-right: 0px;
 }
 
-/* ─── Header ─── */
+/*  Header  */
 .header {
   display: flex;
   justify-content: space-between;
@@ -89,7 +89,7 @@
   transform: translateY(-1px);
 }
 
-/* ─── Block Tabs ─── */
+/*  Block Tabs  */
 .blockTabs {
   display: flex;
   background: #f1f5f9;
@@ -113,10 +113,10 @@
 .activeTab {
   background: white !important;
   color: #3b82f6 !important;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
-/* ─── Legend ─── */
+/*  Legend  */
 .legend {
   display: flex;
   gap: 20px;
@@ -143,16 +143,32 @@
   border-radius: 4px;
 }
 
-.freeBox { background: #22c55e; }
-.softBookedBox { background: #facc15; }
-.hardBookedBox { background: #f97316; }
-.contractSignedBox { background: #e67e22; }
-.downPaymentBox { background: #ef4444; }
-.fullyPaidBox { background: #991b1b; }
-.serviceBox { background: #3b82f6; }
-.excludedBox { background: #94a3b8; }
+.freeBox {
+  background: #22c55e;
+}
+.softBookedBox {
+  background: #facc15;
+}
+.hardBookedBox {
+  background: #f97316;
+}
+.contractSignedBox {
+  background: #e67e22;
+}
+.downPaymentBox {
+  background: #ef4444;
+}
+.fullyPaidBox {
+  background: #991b1b;
+}
+.serviceBox {
+  background: #3b82f6;
+}
+.excludedBox {
+  background: #94a3b8;
+}
 
-/* ─── Stats Row ─── */
+/*  Stats Row  */
 .statsRow {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
@@ -181,7 +197,7 @@
   margin-top: 2px;
 }
 
-/* ─── Filters ─── */
+/*  Filters  */
 .filterBar {
   display: flex;
   gap: 10px;
@@ -239,7 +255,7 @@
   text-transform: uppercase;
 }
 
-/* ─── Grid Card ─── */
+/*  Grid Card  */
 .gridCard {
   background: white;
   border: 1px solid #e2e8f0;
@@ -272,10 +288,11 @@
 .units {
   display: flex;
   gap: 6px;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
+  align-items: stretch;
 }
 
-/* ─── Unit Cell ─── */
+/*  Unit Cell  */
 .unit {
   width: 180px;
   height: 110px;
@@ -286,13 +303,13 @@
   justify-content: space-between;
   cursor: pointer;
   transition: all 0.25s;
-  border: 1px solid rgba(0,0,0,0.06);
+  border: 1px solid rgba(0, 0, 0, 0.06);
   position: relative;
   overflow: hidden;
 }
 
 .unit::before {
-  content: '';
+  content: "";
   position: absolute;
   top: 0;
   left: 0;
@@ -303,7 +320,7 @@
 
 .unit:hover {
   transform: translateY(-3px) scale(1.02);
-  box-shadow: 0 8px 25px rgba(0,0,0,0.12);
+  box-shadow: 0 8px 25px rgba(0, 0, 0, 0.12);
   z-index: 10;
 }
 
@@ -336,50 +353,66 @@
   background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
   color: #166534;
 }
-.free::before { background: #22c55e; }
+.free::before {
+  background: #22c55e;
+}
 
 .softBooked {
   background: linear-gradient(135deg, #fefce8 0%, #fef9c3 100%);
   color: #854d0e;
 }
-.softBooked::before { background: #facc15; }
+.softBooked::before {
+  background: #facc15;
+}
 
 .hardBooked {
   background: linear-gradient(135deg, #fff7ed 0%, #ffedd5 100%);
   color: #9a3412;
 }
-.hardBooked::before { background: #f97316; }
+.hardBooked::before {
+  background: #f97316;
+}
 
 .contractSigned {
   background: linear-gradient(135deg, #fef3e2 0%, #fde2b3 100%);
   color: #7c3d12;
 }
-.contractSigned::before { background: #e67e22; }
+.contractSigned::before {
+  background: #e67e22;
+}
 
 .downPayment {
   background: linear-gradient(135deg, #fef2f2 0%, #fecaca 100%);
   color: #991b1b;
 }
-.downPayment::before { background: #ef4444; }
+.downPayment::before {
+  background: #ef4444;
+}
 
 .fullyPaid {
   background: linear-gradient(135deg, #fdf2f2 0%, #f5c6c6 100%);
   color: #7f1d1d;
 }
-.fullyPaid::before { background: #991b1b; }
+.fullyPaid::before {
+  background: #991b1b;
+}
 
 .service {
   background: linear-gradient(135deg, #eff6ff 0%, #dbeafe 100%);
   color: #1e40af;
 }
-.service::before { background: #3b82f6; }
+.service::before {
+  background: #3b82f6;
+}
 
 .excluded {
   background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
   color: #64748b;
   opacity: 0.6;
 }
-.excluded::before { background: #94a3b8; }
+.excluded::before {
+  background: #94a3b8;
+}
 
 .dimmed {
   opacity: 0.25;
@@ -399,6 +432,19 @@
   border-radius: 4px;
 }
 
+.promoBadge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: linear-gradient(135deg, #ef4444, #b91c1c);
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+}
+
 .timerBadge {
   position: absolute;
   top: 6px;
@@ -411,17 +457,18 @@
   border-radius: 4px;
 }
 
-/* ─── SIDE PANEL (НОВЫЙ, УЗКИЙ, НЕ ПЕРЕКРЫВАЕТ) ─── */
+/*  SIDE PANEL (НОВЫЙ, УЗКИЙ, НЕ ПЕРЕКРЫВАЕТ)  */
+/*  SIDE PANEL (ПОЛНОЭКРАННЫЙ OVERLAY)  */
 .sidePanel {
   position: fixed;
   top: 0;
   right: 0;
-  width: 900px;
-  max-width: 100vw;
+  width: 100vw;
+  max-width: 100%;
   height: 100vh;
-  background: white;
-  box-shadow: -10px 0 30px rgba(15, 23, 42, 0.08);
-  z-index: 100;
+  background: #f8fafc;
+  box-shadow: none;
+  z-index: 1000;
   display: flex;
   flex-direction: column;
   transform: translateX(100%);
@@ -433,40 +480,43 @@
 }
 
 .panelHeader {
-  padding: 20px;
+  padding: 20px 32px;
   border-bottom: 1px solid #e2e8f0;
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   background: white;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
 .panelHeader h2 {
-  font-size: 1.2rem;
-  font-weight: 800;
-  margin: 0 0 4px 0;
+  font-size: 1.5rem;
+  font-weight: 850;
+  margin: 0 0 6px 0;
   color: #0f172a;
+  letter-spacing: -0.5px;
 }
 
 .statusPill {
   display: inline-block;
-  padding: 4px 10px;
-  border-radius: 20px;
-  font-size: 0.7rem;
-  font-weight: 700;
+  padding: 6px 14px;
+  border-radius: 30px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  text-transform: uppercase;
 }
 
 .closeBtn {
   background: #f1f5f9;
   border: none;
-  width: 32px;
-  height: 32px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
+  border-radius: 12px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 1rem;
+  font-size: 1.2rem;
   color: #64748b;
   transition: all 0.2s;
 }
@@ -474,59 +524,224 @@
 .closeBtn:hover {
   background: #fee2e2;
   color: #dc2626;
+  transform: rotate(90deg);
 }
 
-.panelContent {
-  padding: 20px;
-  overflow-y: auto;
+.editUnitBtn {
+  background: #eff6ff;
+  color: #2563eb;
+  border: 1px solid #bfdbfe;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.editUnitBtn:hover {
+  background: #dbeafe;
+  transform: translateY(-1px);
+}
+
+.deleteUnitBtn {
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fecaca;
+  padding: 10px 20px;
+  border-radius: 10px;
+  font-weight: 700;
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.deleteUnitBtn:hover {
+  background: #fee2e2;
+  transform: translateY(-1px);
+}
+
+/* Двухколоночный полноэкранный контент */
+.panelBody {
+  display: flex;
   flex: 1;
+  overflow: hidden;
+  padding: 32px;
+  gap: 32px;
+}
+
+.panelLeftCol {
+  flex: 1.4;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-right: 16px;
+}
+
+.panelRightCol {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.sectionCard {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.sectionCard h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 20px 0;
+  border-bottom: 1.5px solid #f1f5f9;
+  padding-bottom: 12px;
 }
 
 .paramGrid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 12px;
-  margin-bottom: 20px;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 16px;
 }
 
 .paramItem {
   background: #f8fafc;
-  padding: 12px;
-  border-radius: 12px;
+  padding: 16px;
+  border-radius: 14px;
+  border: 1px solid #f1f5f9;
 }
 
 .paramLabel {
   font-size: 0.7rem;
   color: #94a3b8;
-  font-weight: 600;
+  font-weight: 700;
   text-transform: uppercase;
+  display: block;
+  margin-bottom: 6px;
+  letter-spacing: 0.5px;
+}
+
+.paramValue {
+  font-size: 1.2rem;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+/* Клиентская карточка */
+.associatedClientCard {
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.associatedClientCard h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 16px 0;
+}
+
+.clientProfileBox {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  background: #f8fafc;
+  padding: 16px;
+  border-radius: 16px;
+  border: 1px solid #f1f5f9;
+}
+
+.clientAvatar {
+  width: 54px;
+  height: 54px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #eff6ff, #dbeafe);
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.4rem;
+  font-weight: 800;
+  border: 2px solid #bfdbfe;
+}
+
+.clientMetaBox {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.clientDossierLink {
+  background: none;
+  border: none;
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: #2563eb;
+  text-align: left;
+  cursor: pointer;
+  padding: 0;
+  text-decoration: underline;
+  transition: color 0.15s;
+}
+
+.clientDossierLink:hover {
+  color: #1d4ed8;
+}
+
+.clientStatusLabel {
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.noClientAlert {
+  text-align: center;
+  padding: 24px 16px;
+  background: #f8fafc;
+  border-radius: 16px;
+  border: 2px dashed #cbd5e1;
+}
+
+.noClientAlert span {
+  font-weight: 800;
+  color: #64748b;
+  font-size: 1rem;
   display: block;
   margin-bottom: 4px;
 }
 
-.paramValue {
-  font-size: 1rem;
-  font-weight: 700;
-  color: #1e293b;
+.noClientAlert p {
+  font-size: 0.85rem;
+  color: #94a3b8;
+  margin: 0;
 }
 
+/* Финансовый калькулятор */
 .calcCard {
-  background: #f8fafc;
-  padding: 16px;
-  border-radius: 16px;
-  margin-bottom: 20px;
+  background: white;
+  border: 1px solid #e2e8f0;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
 }
 
 .calcCard h3 {
-  font-size: 0.85rem;
-  font-weight: 700;
-  margin-bottom: 12px;
-  color: #1e293b;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 16px 0;
 }
 
 .calcLabel {
   font-size: 0.7rem;
-  font-weight: 700;
+  font-weight: 800;
   color: #94a3b8;
   display: block;
   margin-bottom: 6px;
@@ -535,118 +750,260 @@
 
 .calcInput {
   width: 100%;
-  padding: 10px 12px;
-  border: 1px solid #e2e8f0;
+  padding: 12px;
+  border: 1.5px solid #cbd5e1;
   border-radius: 10px;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  font-weight: 600;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.calcInput:focus {
+  border-color: #2563eb;
 }
 
 .calcResult {
-  font-size: 1.1rem;
-  font-weight: 800;
-  color: #3b82f6;
-  margin-top: 4px;
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: #2563eb;
+  margin-top: 2px;
 }
 
-.historyBtn {
-  background: #f8fafc;
+/* Действия с объектом */
+.bookingControlsCard {
+  background: white;
   border: 1px solid #e2e8f0;
-  padding: 8px 16px;
+  border-radius: 20px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.bookingControlsCard h3 {
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: #0f172a;
+  margin: 0 0 16px 0;
+}
+
+.bookingLabel {
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #64748b;
+  display: block;
+  margin-bottom: 6px;
+  text-transform: uppercase;
+}
+
+.bookingTypeTabs {
+  display: flex;
+  background: #f1f5f9;
+  padding: 4px;
+  border-radius: 10px;
+  gap: 4px;
+}
+
+.bookingTypeTab {
+  flex: 1;
+  padding: 8px 12px;
   border-radius: 8px;
   font-size: 0.8rem;
   font-weight: 700;
-  color: #64748b;
   cursor: pointer;
-  width: 100%;
-  margin-bottom: 16px;
+  border: none;
+  color: #64748b;
+  background: transparent;
+  transition: all 0.2s;
 }
 
-.historyBtn:hover {
-  background: #f1f5f9;
-  color: #0f172a;
+.bookingTypeTabActiveSoft {
+  background: white !important;
+  color: #b45309 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.priceHistoryList {
-  background: #f8fafc;
-  padding: 12px;
-  border-radius: 12px;
-  margin-top: 8px;
+.bookingTypeTabActiveHard {
+  background: white !important;
+  color: #ea580c !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.priceHistoryList h4 {
-  font-size: 0.75rem;
-  font-weight: 800;
-  color: #475569;
-  margin-bottom: 8px;
+.bookingTypeTabActiveService {
+  background: white !important;
+  color: #1d4ed8 !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
 }
 
-.priceHistoryItem {
-  font-size: 0.75rem;
-  padding: 6px 0;
-  border-bottom: 1px solid #e2e8f0;
-}
-
-.oldPrice {
-  color: #dc2626;
-  text-decoration: line-through;
-}
-
-.newPrice {
-  color: #16a34a;
+.durationBanner {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 0.85rem;
   font-weight: 700;
-}
-
-.priceHistoryDate {
-  font-size: 0.65rem;
-  color: #94a3b8;
-}
-
-.actionArea {
-  padding: 20px;
-  border-top: 1px solid #e2e8f0;
-  background: white;
+  color: #1e40af;
+  text-align: center;
 }
 
 .leadSelect {
   width: 100%;
   padding: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1.5px solid #cbd5e1;
   border-radius: 10px;
-  margin-bottom: 12px;
-  font-size: 0.9rem;
+  font-size: 0.95rem;
+  background: white;
+  outline: none;
 }
 
 .bookBtn {
   width: 100%;
   padding: 14px;
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: linear-gradient(135deg, #2563eb, #1d4ed8);
   color: white;
   border: none;
   border-radius: 12px;
-  font-weight: 700;
+  font-weight: 800;
+  font-size: 1rem;
   cursor: pointer;
   transition: all 0.2s;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.15);
 }
 
 .bookBtn:hover {
-  background: linear-gradient(135deg, #2563eb, #1d4ed8);
+  background: linear-gradient(135deg, #1d4ed8, #1e40af);
   transform: translateY(-1px);
 }
 
 .bookedAlert {
-  text-align: center;
-  padding: 20px;
-  background: #fff7ed;
-  border-radius: 12px;
-  border: 1px solid #fed7aa;
-}
-
-.bookedAlert span {
-  color: #9a3412;
+  font-size: 0.95rem;
   font-weight: 800;
+  color: #ea580c;
 }
 
-/* ─── Mass Pricing Panel ─── */
+/* Лента активности (История действий) */
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  position: relative;
+  padding-left: 24px;
+  border-left: 2px solid #e2e8f0;
+  margin-left: 12px;
+  margin-top: 20px;
+}
+
+.timelineItem {
+  position: relative;
+  display: flex;
+  gap: 16px;
+}
+
+.timelineIcon {
+  position: absolute;
+  left: -37px;
+  top: 4px;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: white;
+  border: 2px solid #3b82f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.9rem;
+  z-index: 2;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.timelineContent {
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  padding: 14px 18px;
+  flex: 1;
+}
+
+.timelineHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.timelineTitle {
+  font-weight: 800;
+  font-size: 0.95rem;
+  color: #0f172a;
+}
+
+.timelineDate {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  font-weight: 600;
+}
+
+.timelineDesc {
+  font-size: 0.85rem;
+  color: #475569;
+  margin: 0;
+  line-height: 1.45;
+}
+
+/* История изменения цен */
+.priceHistoryToggleBtn {
+  background: #f1f5f9;
+  border: 1.5px solid #cbd5e1;
+  border-radius: 8px;
+  padding: 6px 12px;
+  font-size: 0.75rem;
+  font-weight: 800;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.priceHistoryToggleBtn:hover {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.priceHistoryList {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.priceHistoryItem {
+  background: #f8fafc;
+  padding: 12px 16px;
+  border-radius: 12px;
+  border: 1px solid #f1f5f9;
+}
+
+.priceHistoryHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 800;
+  font-size: 0.95rem;
+  margin-bottom: 6px;
+}
+
+.priceHistoryMeta {
+  font-size: 0.75rem;
+  color: #94a3b8;
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.priceReason {
+  color: #475569;
+}
+
+/*  Mass Pricing Panel  */
 .massPriceBar {
   background: white;
   border: 1px solid #cbd5e1;
@@ -701,7 +1058,8 @@
   text-transform: uppercase;
 }
 
-.formField select, .formField input {
+.formField select,
+.formField input {
   padding: 8px 12px;
   border: 1px solid #cbd5e1;
   border-radius: 8px;
@@ -728,7 +1086,7 @@
   cursor: pointer;
 }
 
-/* ─── Modal for Import ─── */
+/*  Modal for Import  */
 .modalOverlay {
   position: fixed;
   top: 0;
@@ -793,7 +1151,7 @@
   background: #059669;
 }
 
-/* ─── Empty State ─── */
+/*  Empty State  */
 .emptyState {
   text-align: center;
   padding: 60px 20px;
@@ -816,7 +1174,7 @@
   cursor: pointer;
 }
 
-/* ─── MODAL FOR IMPORT EXCEL (СОВРЕМЕННЫЙ, ПРЕМИУМ) ─── */
+/*  MODAL FOR IMPORT EXCEL (СОВРЕМЕННЫЙ, ПРЕМИУМ)  */
 .modalOverlay {
   position: fixed;
   top: 0;
@@ -833,8 +1191,12 @@
 }
 
 @keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .modalContent {
@@ -848,11 +1210,11 @@
 }
 
 @keyframes slideUp {
-  from { 
+  from {
     opacity: 0;
     transform: translateY(30px) scale(0.98);
   }
-  to { 
+  to {
     opacity: 1;
     transform: translateY(0) scale(1);
   }
@@ -990,8 +1352,14 @@
 }
 
 @keyframes slideIn {
-  from { opacity: 0; transform: translateY(-10px); }
-  to { opacity: 1; transform: translateY(0); }
+  from {
+    opacity: 0;
+    transform: translateY(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .selectedFile .fileName {
@@ -1166,7 +1534,6 @@
   margin: 4px 0;
 }
 
-
 .formRow {
   display: flex;
   gap: 16px;
@@ -1237,7 +1604,7 @@
   box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
 }
 
-/* ─── Бронирование ─── */
+/*  Бронирование  */
 .bookingSection {
   display: flex;
   flex-direction: column;
@@ -1307,4 +1674,195 @@
   background: #f1f5f9;
   border-radius: 8px;
   border: 1px dashed #cbd5e1;
+}
+
+/*  Tabs inside Side Panel  */
+.sidePanelTabs {
+  display: flex;
+  background: white;
+  border-bottom: 1px solid #e2e8f0;
+  padding: 0 32px;
+  gap: 24px;
+}
+
+.sidePanelTab {
+  padding: 16px 4px;
+  background: none;
+  border: none;
+  border-bottom: 2.5px solid transparent;
+  color: #64748b;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidePanelTab:hover {
+  color: #1e293b;
+}
+
+.sidePanelTabActive {
+  color: #2563eb !important;
+  border-bottom-color: #2563eb !important;
+}
+
+/* Single column panel body */
+.panelBodySingle {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  gap: 16px;
+  background: #f8fafc;
+}
+
+.panelBodySingle::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panelBodySingle::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 4px;
+}
+
+/* Accordion styles */
+.accordionItem {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.accordionHeader {
+  width: 100%;
+  padding: 16px 20px;
+  background: #ffffff;
+  border: none;
+  font-size: 0.95rem;
+  font-weight: 800;
+  color: #0f172a;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  transition: background 0.2s ease;
+}
+
+.accordionHeader:hover {
+  background: #f8fafc;
+}
+
+.accordionContent {
+  padding: 20px;
+  border-top: 1px solid #f1f5f9;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ── Калькулятор рассрочки: сетка "Дата / Сумма $ / %" ─────────────────── */
+.installmentGrid {
+  width: 100%;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.installmentGridHeader {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  gap: 12px;
+  padding: 10px 14px;
+  background: #f1f5f9;
+  font-size: 0.7rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  color: #64748b;
+}
+
+.installmentGridHeader span:first-child {
+  visibility: hidden;
+}
+
+.installmentGridRow {
+  display: grid;
+  grid-template-columns: 1.4fr 1fr 1fr 1fr;
+  gap: 12px;
+  padding: 12px 14px;
+  align-items: center;
+  border-top: 1px solid #f1f5f9;
+}
+
+.installmentGridLabel {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #1e293b;
+}
+
+/* ── Таблица результата графика — во всю ширину, зебра, аккуратный вид ─── */
+.installmentTableWrapper {
+  width: 100%;
+  overflow-x: auto;
+  border: 1px solid #e2e8f0;
+  border-radius: 14px;
+}
+
+.installmentTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.85rem;
+}
+
+.installmentTable thead th {
+  background: #0f172a;
+  color: #ffffff;
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  font-weight: 800;
+  position: sticky;
+  top: 0;
+}
+
+.installmentTable tbody td {
+  padding: 11px 16px;
+  border-top: 1px solid #f1f5f9;
+  color: #1e293b;
+}
+
+.installmentTable tbody tr:nth-child(even) {
+  background: #f8fafc;
+}
+
+.installmentTable tbody tr:hover {
+  background: #eff6ff;
+}
+
+.installmentTable tbody tr.weekendRow td {
+  color: #dc2626;
+  font-weight: 600;
+}
+
+.installmentTable tbody tr:last-child td {
+  font-weight: 800;
+  background: #f0fdf4;
+  border-top: 2px solid #86efac;
+}
+
+/* Поле в строке калькулятора, значение которого сейчас вычисляется автоматически */
+.inputAuto {
+  background: #eff6ff !important;
+  border-color: #bfdbfe !important;
+  color: #1e40af !important;
+  font-weight: 700;
 }

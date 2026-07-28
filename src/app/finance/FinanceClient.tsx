@@ -10,19 +10,38 @@ import {
   unmatchTransactionAction 
 } from '@/app/actions/finance';
 
+import { canViewAllFinance, canManageFinance, isReadOnly, UserRole } from '@/lib/roles';
+
 interface FinanceClientProps {
   initialTransactions: any[];
   initialSchedules: any[];
   organizationId: string;
+  userRole?: string;
+  managerId?: string;
 }
 
 export default function FinanceClient({ 
   initialTransactions, 
   initialSchedules, 
-  organizationId 
+  organizationId,
+  userRole = 'manager',
+  managerId = ''
 }: FinanceClientProps) {
-  const [transactions, setTransactions] = useState(initialTransactions);
-  const [schedules, setSchedules] = useState(initialSchedules);
+  const role = userRole as UserRole;
+  const canViewAll = canViewAllFinance(role);
+  const canManage = canManageFinance(role);
+  const readOnly = isReadOnly(role);
+
+  // Менеджер видит только транзакции и платежи по своим договорам
+  const roleFilteredTransactions = canViewAll
+    ? initialTransactions
+    : initialTransactions.filter(t => t.managerId === managerId || !t.managerId);
+  const roleFilteredSchedules = canViewAll
+    ? initialSchedules
+    : initialSchedules.filter(s => s.managerId === managerId || !s.managerId);
+
+  const [transactions, setTransactions] = useState(roleFilteredTransactions);
+  const [schedules, setSchedules] = useState(roleFilteredSchedules);
   
   const [activeTab, setActiveTab] = useState<'statement' | 'schedule'>('statement');
   const [searchQuery, setSearchQuery] = useState('');
@@ -99,10 +118,10 @@ export default function FinanceClient({
     try {
       const res = await syncTBCBankAPIAction(organizationId);
       if (res.success) {
-        alert(`✅ Синхронизация завершена!\nИмпортировано транзакций: ${res.importedCount}\nАвтоматически сопоставлено: ${res.matchedCount}`);
+        alert(` Синхронизация завершена!\nИмпортировано транзакций: ${res.importedCount}\nАвтоматически сопоставлено: ${res.matchedCount}`);
         router.refresh();
       } else {
-        alert('❌ Ошибка синхронизации: ' + (res.message || 'Не удалось получить данные с сервера.'));
+        alert(' Ошибка синхронизации: ' + (res.message || 'Не удалось получить данные с сервера.'));
       }
     } catch (e) {
       console.error(e);
@@ -124,10 +143,10 @@ export default function FinanceClient({
     try {
       const res = await importBankStatementAction(formData, organizationId);
       if (res.success) {
-        alert(`✅ Файл выписки успешно обработан!\nНовых транзакций добавлено: ${res.importedCount}\nАвтоматически распознано и сопоставлено: ${res.matchedCount}`);
+        alert(` Файл выписки успешно обработан!\nНовых транзакций добавлено: ${res.importedCount}\nАвтоматически распознано и сопоставлено: ${res.matchedCount}`);
         router.refresh();
       } else {
-        alert('❌ Ошибка импорта: ' + (res.message || 'Некорректный формат файла.'));
+        alert(' Ошибка импорта: ' + (res.message || 'Некорректный формат файла.'));
       }
     } catch (err) {
       console.error(err);
@@ -162,11 +181,11 @@ export default function FinanceClient({
       });
 
       if (res.success) {
-        alert('✅ Платеж успешно сопоставлен с графиком оплат!');
+        alert(' Платеж успешно сопоставлен с графиком оплат!');
         handleCloseMatchModal();
         router.refresh();
       } else {
-        alert('❌ Ошибка: ' + (res.message || 'Не удалось сопоставить платеж.'));
+        alert(' Ошибка: ' + (res.message || 'Не удалось сопоставить платеж.'));
       }
     } catch (err) {
       console.error(err);
@@ -188,10 +207,10 @@ export default function FinanceClient({
       });
 
       if (res.success) {
-        alert('✅ Сопоставление платежа отменено.');
+        alert(' Сопоставление платежа отменено.');
         router.refresh();
       } else {
-        alert('❌ Не удалось отменить сопоставление: ' + res.message);
+        alert(' Не удалось отменить сопоставление: ' + res.message);
       }
     } catch (err) {
       console.error(err);
@@ -207,35 +226,37 @@ export default function FinanceClient({
           <p className={styles.subtitle}>Автоматический разнос банковских выписок и ведение графиков оплат</p>
         </div>
 
-        <div className={styles.actionsPanel}>
-          <button 
-            onClick={handleTbcSync} 
-            disabled={syncing} 
-            className={styles.btnPrimary}
-          >
-            🔄 {syncing ? 'Синхронизация...' : 'Синхронизировать TBC API'}
-          </button>
-
-          <div className={styles.fileInputWrapper}>
-            <button disabled={uploading} className={styles.btnSecondary}>
-              📁 {uploading ? 'Загрузка...' : 'Загрузить выписку (Excel)'}
+        {canManage && (
+          <div className={styles.actionsPanel}>
+            <button 
+              onClick={handleTbcSync} 
+              disabled={syncing} 
+              className={styles.btnPrimary}
+            >
+               {syncing ? 'Синхронизация...' : 'Синхронизировать TBC API'}
             </button>
-            <input 
-              type="file" 
-              accept=".xlsx,.xls" 
-              onChange={handleExcelImport} 
-              className={styles.fileInput}
-              disabled={uploading}
-            />
+
+            <div className={styles.fileInputWrapper}>
+              <button disabled={uploading} className={styles.btnSecondary}>
+                 {uploading ? 'Загрузка...' : 'Загрузить выписку (Excel)'}
+              </button>
+              <input 
+                type="file" 
+                accept=".xlsx,.xls" 
+                onChange={handleExcelImport} 
+                className={styles.fileInput}
+                disabled={uploading}
+              />
+            </div>
           </div>
-        </div>
+        )}
       </header>
 
       {/* Grid Статистики */}
       <div className={styles.statsGrid}>
         <div className={styles.statCard}>
           <div className={styles.statIcon} style={{ backgroundColor: '#e0e7ff', color: '#4f46e5' }}>
-            💳
+            
           </div>
           <div className={styles.statInfo}>
             <span className={styles.statTitle}>Всего транзакций</span>
@@ -245,7 +266,7 @@ export default function FinanceClient({
 
         <div className={styles.statCard}>
           <div className={styles.statIcon} style={{ backgroundColor: '#d1fae5', color: '#10b981' }}>
-            📈
+            
           </div>
           <div className={styles.statInfo}>
             <span className={styles.statTitle}>Сопоставлено</span>
@@ -255,7 +276,7 @@ export default function FinanceClient({
 
         <div className={styles.statCard}>
           <div className={styles.statIcon} style={{ backgroundColor: '#fee2e2', color: '#ef4444' }}>
-            ⚠️
+            
           </div>
           <div className={styles.statInfo}>
             <span className={styles.statTitle}>Не распознано</span>
@@ -265,7 +286,7 @@ export default function FinanceClient({
 
         <div className={styles.statCard}>
           <div className={styles.statIcon} style={{ backgroundColor: '#fef3c7', color: '#f59e0b' }}>
-            💰
+            
           </div>
           <div className={styles.statInfo}>
             <span className={styles.statTitle}>Поступило оплат</span>
@@ -282,13 +303,13 @@ export default function FinanceClient({
               onClick={() => { setActiveTab('statement'); setSearchQuery(''); }}
               className={`${styles.tabButton} ${activeTab === 'statement' ? styles.activeTab : ''}`}
             >
-              📄 Банковская выписка
+               Банковская выписка
             </button>
             <button 
               onClick={() => { setActiveTab('schedule'); setSearchQuery(''); }}
               className={`${styles.tabButton} ${activeTab === 'schedule' ? styles.activeTab : ''}`}
             >
-              📅 График платежей (Реестр)
+               График платежей (Реестр)
             </button>
           </div>
 
@@ -331,7 +352,7 @@ export default function FinanceClient({
           {activeTab === 'statement' ? (
             filteredTxs.length === 0 ? (
               <div className={styles.emptyState}>
-                <span className={styles.emptyIcon}>📂</span>
+                <span className={styles.emptyIcon}></span>
                 <p className={styles.emptyText}>Выписка пуста. Синхронизируйте API TBC Bank или загрузите Excel-файл выписки.</p>
               </div>
             ) : (
@@ -374,7 +395,7 @@ export default function FinanceClient({
                       </td>
                       <td>
                         <span className={`${styles.badge} ${tx.status === 'MATCHED' ? styles.badgeMatched : styles.badgeUnmatched}`}>
-                          {tx.status === 'MATCHED' ? '⭐ Сопоставлен' : '⚠️ Не распознан'}
+                          {tx.status === 'MATCHED' ? ' Сопоставлен' : ' Не распознан'}
                         </span>
                       </td>
                       <td>
@@ -383,20 +404,24 @@ export default function FinanceClient({
                             <span style={{ fontSize: '0.75rem', color: '#64748b' }}>
                               Кв №{tx.unitNumber} ({tx.leadName})
                             </span>
-                            <button 
-                              onClick={() => handleUnmatch(tx.id)}
-                              className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
-                            >
-                              Отвязать
-                            </button>
+                            {canManage && (
+                              <button 
+                                onClick={() => handleUnmatch(tx.id)}
+                                className={`${styles.actionBtn} ${styles.actionBtnDanger}`}
+                              >
+                                Отвязать
+                              </button>
+                            )}
                           </div>
                         ) : (
-                          <button 
-                            onClick={() => handleOpenMatchModal(tx)}
-                            className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
-                          >
-                            🔗 Сопоставить вручную
-                          </button>
+                          canManage && (
+                            <button 
+                              onClick={() => handleOpenMatchModal(tx)}
+                              className={`${styles.actionBtn} ${styles.actionBtnPrimary}`}
+                            >
+                               Сопоставить вручную
+                            </button>
+                          )
                         )}
                       </td>
                     </tr>
@@ -407,7 +432,7 @@ export default function FinanceClient({
           ) : (
             filteredSchedules.length === 0 ? (
               <div className={styles.emptyState}>
-                <span className={styles.emptyIcon}>📅</span>
+                <span className={styles.emptyIcon}></span>
                 <p className={styles.emptyText}>Нет ожидаемых оплат по графику с выбранным фильтром.</p>
               </div>
             ) : (
@@ -468,7 +493,7 @@ export default function FinanceClient({
           <div className={styles.modalContent}>
             <div className={styles.modalHeader}>
               <h3>Ручное распределение платежа</h3>
-              <button onClick={handleCloseMatchModal} className={styles.closeBtn}>✕</button>
+              <button onClick={handleCloseMatchModal} className={styles.closeBtn}></button>
             </div>
 
             <div className={styles.modalBody}>
@@ -522,7 +547,7 @@ export default function FinanceClient({
                 style={{ padding: '8px 16px' }}
                 disabled={submittingMatch || !selectedScheduleId}
               >
-                {submittingMatch ? 'Привязка...' : '🔗 Привязать платеж'}
+                {submittingMatch ? 'Привязка...' : ' Привязать платеж'}
               </button>
             </div>
           </div>

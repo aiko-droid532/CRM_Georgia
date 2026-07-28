@@ -3,8 +3,9 @@
 import React, { useState, useEffect } from 'react';
 import styles from './DealCard.module.css';
 import Calculator from '../Finance/Calculator';
-import { createDeal } from '@/app/actions/deals';
+import { createDeal } from '@/app/actions/leads';
 import { getLeads } from '@/app/actions/leads';
+import { getExchangeRate } from '@/app/actions/exchange';
 
 interface DealCardProps {
   deal: any; // Can be a partial deal or empty for new ones
@@ -16,12 +17,16 @@ const DealCard: React.FC<DealCardProps> = ({ deal, onClose, onSuccess }) => {
   const [activeTab, setActiveTab] = useState('info');
   const [loading, setLoading] = useState(false);
   const [leads, setLeads] = useState<any[]>([]);
+  const [exchangeRate, setExchangeRate] = useState<number>(2.7);
+
+  // Prices are stored in USD directly
+  const initialPrice = deal.price || 120000;
   
   const [formData, setFormData] = useState({
     leadId: deal.leadId || '',
     unitId: deal.unitId || 'test-unit-id', // Placeholder if not from shakhmatka
     status: 'Negotiation',
-    price: deal.price || 25000000
+    price: initialPrice
   });
 
   useEffect(() => {
@@ -31,6 +36,17 @@ const DealCard: React.FC<DealCardProps> = ({ deal, onClose, onSuccess }) => {
       setLeads(data);
     };
     loadLeads();
+
+    // Fetch dynamic exchange rate
+    const fetchRate = async () => {
+      try {
+        const rate = await getExchangeRate();
+        setExchangeRate(rate);
+      } catch (e) {
+        console.error('Failed to fetch exchange rate in DealCard:', e);
+      }
+    };
+    fetchRate();
   }, []);
 
   const handleSave = async () => {
@@ -42,14 +58,15 @@ const DealCard: React.FC<DealCardProps> = ({ deal, onClose, onSuccess }) => {
     setLoading(true);
     const res = await createDeal({
       ...formData,
-      organizationId: 'dev-org-123'
+      organizationId: 'dev-org-123',
+      interestId: deal.interestId || 'dummy-interest-id'
     });
 
     if (res.success) {
       if (onSuccess) onSuccess();
       onClose();
     } else {
-      alert('Ошибка при сохранении сделки');
+      alert('Ошибка при сохранении сделки: ' + (res.error || 'Неизвестная ошибка'));
     }
     setLoading(false);
   };
@@ -63,14 +80,14 @@ const DealCard: React.FC<DealCardProps> = ({ deal, onClose, onSuccess }) => {
             <h2>{deal.client || 'Оформление сделки'}</h2>
             <p>{deal.id !== 'new' && deal.id ? `ID Сделки: ${deal.id}` : 'Привязка клиента к объекту'}</p>
           </div>
-          <button className={styles.closeBtn} onClick={onClose}>✕</button>
+          <button className={styles.closeBtn} onClick={onClose}></button>
         </header>
 
         <nav className={styles.tabs}>
-          <button className={activeTab === 'info' ? styles.activeTab : ''} onClick={() => setActiveTab('info')}>📋 Инфо</button>
-          <button className={activeTab === 'unit' ? styles.activeTab : ''} onClick={() => setActiveTab('unit')}>🏠 Объект</button>
-          <button className={activeTab === 'finance' ? styles.activeTab : ''} onClick={() => setActiveTab('finance')}>💰 Финансы</button>
-          <button className={activeTab === 'mortgage' ? styles.activeTab : ''} onClick={() => setActiveTab('mortgage')}>🏦 Ипотека</button>
+          <button className={activeTab === 'info' ? styles.activeTab : ''} onClick={() => setActiveTab('info')}> Инфо</button>
+          <button className={activeTab === 'unit' ? styles.activeTab : ''} onClick={() => setActiveTab('unit')}> Объект</button>
+          <button className={activeTab === 'finance' ? styles.activeTab : ''} onClick={() => setActiveTab('finance')}> Финансы</button>
+          <button className={activeTab === 'mortgage' ? styles.activeTab : ''} onClick={() => setActiveTab('mortgage')}> Ипотека</button>
         </nav>
 
         <div className={styles.content}>
@@ -113,7 +130,8 @@ const DealCard: React.FC<DealCardProps> = ({ deal, onClose, onSuccess }) => {
                   <div className={styles.grid}>
                     <div><span>Этаж</span><strong>{deal.floor || '4'}</strong></div>
                     <div><span>Площадь</span><strong>{deal.area || '64.5'} м²</strong></div>
-                    <div><span>Цена</span><strong>{formData.price.toLocaleString()} ₸</strong></div>
+                    <div><span>Цена (USD)</span><strong>${formData.price.toLocaleString()}</strong></div>
+                    <div><span>Цена (GEL)</span><strong>{Math.round(formData.price * exchangeRate).toLocaleString()} ₾</strong></div>
                   </div>
                 </div>
               </div>
@@ -121,13 +139,17 @@ const DealCard: React.FC<DealCardProps> = ({ deal, onClose, onSuccess }) => {
             </div>
           )}
 
-          {activeTab === 'finance' && <div className={styles.financeBlock}><Calculator /></div>}
+          {activeTab === 'finance' && (
+            <div className={styles.financeBlock}>
+              <Calculator initialPrice={formData.price} />
+            </div>
+          )}
 
           {activeTab === 'mortgage' && (
             <div className={styles.mortgageBlock}>
               <h3>Статус ипотеки</h3>
               <div className={styles.bankList}>
-                {['Halyk Bank', 'Отбасы Банк', 'БЦК'].map(bank => (
+                {['TBC Bank', 'Bank of Georgia', 'Liberty Bank'].map(bank => (
                   <div key={bank} className={styles.bankItem}>
                     <span>{bank}</span>
                     <select><option>Не подавали</option><option>В процессе</option><option>Одобрено</option></select>

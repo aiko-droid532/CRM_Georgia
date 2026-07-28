@@ -4,7 +4,7 @@
   --primary-glow: rgba(37, 99, 235, 0.15);
   
   --bg-main: #f8fafc;
-  --bg-card: #f7fbfe;
+  --bg-card: #ffffff;
   --bg-control: #f1f5f9;
   
   --text-main: #0f172a;
@@ -872,7 +872,7 @@
   overflow-x: auto;
   padding-top: 12px;
   padding-bottom: 12px;
-  align-items: flex-start;
+  align-items: flex-end;
   width: 100%;
   transform: rotateX(180deg);
 }

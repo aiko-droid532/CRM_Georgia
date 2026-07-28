@@ -2,6 +2,7 @@
 
 import { db as prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
+import { requireRole, canManageDeals } from '@/lib/roles';
 
 // Получить все сделки организации через прямой JOIN SQL (очень быстро и безопасно для PgBouncer)
 export async function getDeals(organizationId: string) {
@@ -89,18 +90,21 @@ const STAGE_HIERARCHY: Record<string, number> = {
   PRE_RESERVATION: 6,
   RESERVATION: 7,
   CONTRACT_PREPARATION: 8,
-  CONTRACT: 9,
+  MEETING: 9,
   CLIENT_CONFIRMATION: 10,
-  WAITING_PAYMENT: 11,
+  CONTRACT: 11,
   PAYMENT_CONFIRMED: 12,
-  SUCCESS: 13,
-  FAILED: 14,
-  CANCELLED: 15
+  DEAL: 13,
+  WAITING_PAYMENT: 14,
+  SUCCESS: 15,
+  FAILED: 16,
+  CANCELLED: 17
 };
 
 // Обновить статус сделки (перетаскивание по воронке) напрямую через SQL
-export async function updateDealStatus(dealId: string, status: any, previousStatus?: string, isUndo?: boolean) {
+export async function updateDealStatus(dealId: string, status: any, previousStatus?: string, isUndo?: boolean, cancelReason?: string) {
   try {
+    await requireRole(canManageDeals, 'изменение статуса сделки');
     // 1. Проверяем бизнес-правила переходов по воронке
     const deals: any[] = await prisma.$queryRaw`
       SELECT "unitId" FROM "Deal" WHERE "id" = ${dealId} LIMIT 1
@@ -135,6 +139,30 @@ export async function updateDealStatus(dealId: string, status: any, previousStat
       `;
     }
 
+    // 2.2 Логируем переход статуса в AuditLog для RPT-001 (История переходов)
+    const dealDetailRows: any[] = await prisma.$queryRaw`
+      SELECT "managerId", "organizationId" FROM "Deal" WHERE "id" = ${dealId} LIMIT 1
+    `;
+    const mgrId = dealDetailRows[0]?.managerId || 'system';
+    const orgId = dealDetailRows[0]?.organizationId || 'default';
+
+    await prisma.$executeRaw`
+      INSERT INTO "AuditLog" ("id", "action", "entityType", "entityId", "managerId", "fieldName", "oldValue", "newValue", "reason", "organizationId", "createdAt")
+      VALUES (
+        ${crypto.randomUUID()},
+        'UPDATE',
+        'Deal',
+        ${dealId},
+        ${mgrId},
+        'status',
+        ${previousStatus || 'NEW_LEAD'},
+        ${status},
+        ${cancelReason || null},
+        ${orgId},
+        NOW()
+      )
+    `;
+
     // 2.5 Синхронизация статуса лида со статусом сделки (раздел 3 ТЗ)
     if (status === 'FAILED' || status === 'CANCELLED') {
       await prisma.$executeRaw`
@@ -142,6 +170,35 @@ export async function updateDealStatus(dealId: string, status: any, previousStat
         SET "status" = 'LOST', "updatedAt" = NOW()
         WHERE "id" = (SELECT "leadId" FROM "Deal" WHERE "id" = ${dealId} LIMIT 1)
       `;
+      if (deal && deal.unitId) {
+        await prisma.$executeRaw`
+          UPDATE "Unit"
+          SET "status" = 'FREE'::"UnitStatus", "updatedAt" = NOW()
+          WHERE "id" = ${deal.unitId}
+        `;
+      }
+      
+      // Логируем причину расторжения в ChangeLog
+      if (status === 'CANCELLED') {
+        const leadRows: any[] = await prisma.$queryRaw`
+          SELECT "leadId" FROM "Deal" WHERE "id" = ${dealId} LIMIT 1
+        `;
+        const leadId = leadRows[0]?.leadId;
+        if (leadId) {
+          await prisma.$executeRaw`
+            INSERT INTO "ChangeLog" ("id", "leadId", "managerId", "field", "oldValue", "newValue", "createdAt")
+            VALUES (
+              ${crypto.randomUUID()},
+              ${leadId},
+              ${mgrId},
+              'STATUS_CANCELLED',
+              'SUCCESS',
+              ${cancelReason || 'Причина не указана'},
+              NOW()
+            )
+          `;
+        }
+      }
     } else {
       await prisma.$executeRaw`
         UPDATE "Lead"
@@ -189,6 +246,7 @@ export async function updateDealMortgage(data: {
   comment: string;
 }) {
   try {
+    await requireRole(canManageDeals, 'изменение статуса ипотеки');
     await prisma.$executeRaw`
       UPDATE "Deal"
       SET 
@@ -260,6 +318,7 @@ export async function getDealClients(dealId: string) {
 // Добавить дополнительного клиента к сделке
 export async function addDealClient(dealId: string, leadId: string, isPrimary: boolean = false) {
   try {
+    await requireRole(canManageDeals, 'добавление клиента к сделке');
     // Проверяем, не добавлен ли уже
     const existing: any[] = await prisma.$queryRaw`
       SELECT id FROM "DealClient" 
@@ -335,6 +394,7 @@ export async function addDealClient(dealId: string, leadId: string, isPrimary: b
 // Удалить дополнительного клиента из сделки
 export async function removeDealClient(dealClientId: string) {
   try {
+    await requireRole(canManageDeals, 'удаление клиента из сделки');
     await prisma.$executeRaw`
       DELETE FROM "DealClient" WHERE "id" = ${dealClientId}
     `;
@@ -351,6 +411,7 @@ export async function removeDealClient(dealClientId: string) {
 // Сменить основного клиента (обновляет и Deal.leadId, и флаг в DealClient)
 export async function setPrimaryClient(dealId: string, newLeadId: string) {
   try {
+    await requireRole(canManageDeals, 'смена основного клиента');
     // 0. Сохраняем текущего основного в DealClient если его там нет
     const currentDeal: any[] = await prisma.$queryRaw`
       SELECT "leadId" FROM "Deal" WHERE "id" = ${dealId} LIMIT 1
@@ -432,6 +493,7 @@ export async function getDealUnits(dealId: string) {
 // Добавить дополнительный объект к сделке
 export async function addDealUnit(dealId: string, unitId: string) {
   try {
+    await requireRole(canManageDeals, 'добавление объекта к сделке');
     const existing: any[] = await prisma.$queryRaw`
       SELECT id FROM "DealUnit" 
       WHERE "dealId" = ${dealId} AND "unitId" = ${unitId} AND "isDeleted" = false
@@ -463,6 +525,7 @@ export async function addDealUnit(dealId: string, unitId: string) {
 // Удалить объект из сделки (с причиной)
 export async function removeDealUnit(dealUnitId: string, deleteReason: string, customReason?: string) {
   try {
+    await requireRole(canManageDeals, 'удаление объекта из сделки');
     const finalReason = deleteReason === 'Другое' ? customReason : deleteReason;
 
     await prisma.$executeRaw`
@@ -513,5 +576,101 @@ export async function searchUnits(organizationId: string, query: string) {
   } catch (error) {
     console.error('searchUnits error:', error);
     return [];
+  }
+}
+
+// Активные сделки по конкретному объекту — для селектора в калькуляторе рассрочки (карточка объекта)
+export async function getActiveDealsForUnit(unitId: string, organizationId: string) {
+  try {
+    const deals: any[] = await prisma.$queryRaw`
+      SELECT d.id, d."managerId", l.name as "clientName", l.phone as "clientPhone"
+      FROM "Deal" d
+      JOIN "Lead" l ON d."leadId" = l.id
+      WHERE d."unitId" = ${unitId} AND d."organizationId" = ${organizationId} AND d.status != 'CANCELLED'
+      ORDER BY d."createdAt" DESC
+    `;
+    return deals;
+  } catch (error) {
+    console.error('getActiveDealsForUnit error:', error);
+    return [];
+  }
+}
+
+// Сохранение графика рассрочки, рассчитанного новым калькулятором (по ТЗ заказчика)
+export async function saveInstallmentPlanAction(data: {
+  dealId: string;
+  scheduleType: 'STANDARD' | 'CUSTOM';
+  periodicity: 'MONTHLY' | 'QUARTERLY' | 'BIWEEKLY';
+  basePriceUSD: number;
+  discountApplyType: 'TOTAL_AREA' | 'PER_SQM';
+  discountAmountUSD: number;
+  finalPriceUSD: number;
+  nbgRate: number;
+  firstPaymentDate: string;
+  firstPaymentPercent: number;
+  scheduleStartDate: string;
+  scheduleEndDate: string;
+  recurringAmountUSD: number;
+  lastPaymentDate: string;
+  lastPaymentAmountUSD: number;
+  lastPaymentPercent: number;
+  installmentComment?: string;
+  customScheduleFileUrl?: string;
+  schedule: Array<{ date: string; amountUSD: number; amountGEL: number }>;
+  organizationId: string;
+}) {
+  try {
+    await requireRole(canManageDeals, 'сохранение графика рассрочки');
+
+    await prisma.$executeRaw`
+      UPDATE "Deal"
+      SET
+        "paymentType" = 'INSTALLMENT',
+        "totalAmount" = ${data.finalPriceUSD},
+        "scheduleType" = ${data.scheduleType},
+        "periodicity" = ${data.periodicity},
+        "basePriceUSD" = ${data.basePriceUSD},
+        "discountApplyType" = ${data.discountApplyType},
+        "discountAmountUSD" = ${data.discountAmountUSD},
+        "nbgRate" = ${data.nbgRate},
+        "firstPaymentDate" = ${data.firstPaymentDate},
+        "firstPaymentPercent" = ${data.firstPaymentPercent},
+        "scheduleStartDate" = ${data.scheduleStartDate || null},
+        "scheduleEndDate" = ${data.scheduleEndDate || null},
+        "recurringAmountUSD" = ${data.recurringAmountUSD || null},
+        "lastPaymentDate" = ${data.lastPaymentDate || null},
+        "lastPaymentAmountUSD" = ${data.lastPaymentAmountUSD},
+        "lastPaymentPercent" = ${data.lastPaymentPercent},
+        "installmentComment" = ${data.installmentComment || null},
+        "customScheduleFileUrl" = ${data.customScheduleFileUrl || null},
+        "updatedAt" = NOW()
+      WHERE id = ${data.dealId} AND "organizationId" = ${data.organizationId}
+    `;
+
+    await prisma.$executeRaw`
+      DELETE FROM "PaymentSchedule" WHERE "dealId" = ${data.dealId}
+    `;
+
+    for (const p of data.schedule) {
+      const scheduleId = crypto.randomUUID();
+      const parts = p.date.split('-');
+      const dueDate =
+        parts.length === 3
+          ? new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]))
+          : new Date(p.date);
+
+      await prisma.$executeRaw`
+        INSERT INTO "PaymentSchedule" ("id", "dealId", "amount", "dueDate", "status", "organizationId", "createdAt", "updatedAt")
+        VALUES (${scheduleId}, ${data.dealId}, ${p.amountUSD}, ${dueDate}, 'PENDING', ${data.organizationId}, NOW(), NOW())
+      `;
+    }
+
+    revalidatePath('/shakhmatka');
+    revalidatePath('/clients');
+    revalidatePath('/deals');
+    return { success: true };
+  } catch (error) {
+    console.error('saveInstallmentPlanAction error:', error);
+    return { success: false, error: 'SERVER_ERROR' };
   }
 }

@@ -1,5 +1,9 @@
 import * as jose from 'jose';
 
+// 1. Секрет для ERP (HS256)
+const JWT_SECRET = process.env.JWT_SECRET;
+const encodedSecret = JWT_SECRET ? new TextEncoder().encode(JWT_SECRET) : null;
+
 // Кешируем JWK ключ локально для мгновенной верификации за 0.1мс без сетевых запросов
 const JWK_LOCAL = {
   alg: "ES256",
@@ -28,18 +32,28 @@ const REMOTE_JWKS = jose.createRemoteJWKSet(
 );
 
 export async function verifyToken(token: string) {
+  // 1. Сначала пробуем проверить локально по HS256 с использованием JWT_SECRET (ERP) — это мгновенно!
+  if (encodedSecret) {
+    try {
+      const { payload } = await jose.jwtVerify(token, encodedSecret);
+      return { payload };
+    } catch (hsErr) {
+      // Игнорируем и идем дальше, если токен не HS256
+    }
+  }
+
   try {
-    // 1. Пытаемся проверить локально (МГНОВЕННО - 0.1 мс!)
+    // 2. Пытаемся проверить локально по ES256 (0.1 мс!)
     const localKey = await getLocalKey();
     const { payload } = await jose.jwtVerify(token, localKey);
     return { payload };
   } catch (localErr) {
-    // 2. Если локальный ключ не подошел (например, была ротация), делаем запрос к Supabase
+    // 3. Если локальные ключи не подошли, делаем запрос к Supabase
     try {
       const { payload } = await jose.jwtVerify(token, REMOTE_JWKS);
       return { payload };
     } catch (remoteErr: any) {
-      console.error('JWT verification failed (both local and remote):', remoteErr);
+      console.error('JWT verification failed (all methods):', remoteErr);
       return { error: remoteErr.message || String(remoteErr) };
     }
   }

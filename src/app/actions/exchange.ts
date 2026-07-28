@@ -20,7 +20,7 @@ export async function getExchangeRate(date?: Date): Promise<number> {
     `;
     
     if (cached.length > 0 && !cached[0].isFallback) {
-      console.log(`✅ Курс из БД на ${todayStr}: ${cached[0].rate}`);
+      console.log(` Курс из БД на ${todayStr}: ${cached[0].rate}`);
       return cached[0].rate;
     }
     
@@ -33,7 +33,7 @@ export async function getExchangeRate(date?: Date): Promise<number> {
       VALUES (${crypto.randomUUID()}, 'USD', ${rate}, ${todayStr}::date, false, NOW())
     `;
     
-    console.log(`✅ Курс из API: ${rate}`);
+    console.log(` Курс из API: ${rate}`);
     return rate;
     
   } catch (error) {
@@ -42,12 +42,12 @@ export async function getExchangeRate(date?: Date): Promise<number> {
     // 4. Fallback: последний курс из БД
     const lastRate = await getLastKnownRate();
     if (lastRate) {
-      console.log(`⚠️ Используем последний известный курс: ${lastRate}`);
+      console.log(` Используем последний известный курс: ${lastRate}`);
       return lastRate;
     }
     
     // 5. Супер-fallback: 2.70
-    console.log('⚠️ Используем fallback курс 2.70');
+    console.log(' Используем fallback курс 2.70');
     return 2.70;
   }
 }
@@ -64,7 +64,7 @@ async function fetchRateFromAPI(): Promise<number> {
     if (response.ok) {
       const data = await response.json();
       if (data && data.result) {
-        console.log('✅ Курс из exchangerate.host:', data.result);
+        console.log(' Курс из exchangerate.host:', data.result);
         return parseFloat(data.result.toFixed(4));
       }
     }
@@ -81,7 +81,7 @@ async function fetchRateFromAPI(): Promise<number> {
     if (response.ok) {
       const data = await response.json();
       if (data && data.rates && data.rates.GEL) {
-        console.log('✅ Курс из Frankfurter:', data.rates.GEL);
+        console.log(' Курс из Frankfurter:', data.rates.GEL);
         return parseFloat(data.rates.GEL.toFixed(4));
       }
     }
@@ -98,7 +98,7 @@ async function fetchRateFromAPI(): Promise<number> {
     if (response.ok) {
       const data = await response.json();
       if (data && data.usd && data.usd.gel) {
-        console.log('✅ Курс из currency-api:', data.usd.gel);
+        console.log(' Курс из currency-api:', data.usd.gel);
         return parseFloat(data.usd.gel.toFixed(4));
       }
     }
@@ -153,7 +153,7 @@ export async function updateExchangeRates() {
       `;
     }
     
-    console.log(`✅ Курс обновлен: USD/GEL = ${rate}`);
+    console.log(` Курс обновлен: USD/GEL = ${rate}`);
     return { success: true, rate };
   } catch (error) {
     console.error('Failed to update exchange rates:', error);

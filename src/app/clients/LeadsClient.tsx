@@ -40,7 +40,7 @@ export default function LeadsClient({ initialLeads, organizationId }: LeadsClien
 
       <div className={styles.toolbar}>
         <div className={styles.searchWrapper}>
-          <span className={styles.searchIcon}>🔍</span>
+          <span className={styles.searchIcon}></span>
           <input
             type="text"
             className={styles.searchInput}
@@ -101,7 +101,7 @@ export default function LeadsClient({ initialLeads, organizationId }: LeadsClien
                 </td>
                 <td>
                   {client.interests?.length > 0 ? (
-                    <span className={styles.interestCount}>🏘️ {client.interests.length} объекта</span>
+                    <span className={styles.interestCount}> {client.interests.length} объекта</span>
                   ) : (
                     <span style={{ color: '#94a3b8' }}>Нет подборов</span>
                   )}
@@ -116,7 +116,7 @@ export default function LeadsClient({ initialLeads, organizationId }: LeadsClien
 
         {filteredLeads.length === 0 && (
           <div style={{ textAlign: 'center', padding: '80px', color: '#64748b' }}>
-            <div style={{ fontSize: '3rem', marginBottom: '16px' }}>📂</div>
+            <div style={{ fontSize: '3rem', marginBottom: '16px' }}></div>
             <h3>Клиенты не найдены</h3>
             <p>Попробуйте изменить параметры поиска или фильтры</p>
           </div>
