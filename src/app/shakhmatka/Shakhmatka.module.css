@@ -443,6 +443,12 @@
   padding: 2px 6px;
   border-radius: 4px;
   letter-spacing: 0.02em;
+  z-index: 2;
+}
+
+/* Когда на объекте одновременно акция и VIP — VIP уходит ниже, чтобы не перекрываться */
+.vipBadgeShifted {
+  top: 26px !important;
 }
 
 .timerBadge {

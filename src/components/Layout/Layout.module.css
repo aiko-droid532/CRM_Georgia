@@ -23,13 +23,15 @@
 .navLeft {
   display: flex;
   align-items: center;
-  gap: 40px;
+  gap: 28px;
+  min-width: 0;
 }
 
 .logo {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
 }
 
 .logoIcon {
@@ -45,20 +47,24 @@
 
 .menuItems {
   display: flex;
-  gap: 4px;
+  gap: 2px;
+  flex-wrap: nowrap;
+  min-width: 0;
 }
 
 .navLink {
   display: flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 14px;
+  padding: 6px 12px;
   border-radius: 6px;
-  font-size: 0.9rem;
+  font-size: 0.88rem;
   font-weight: 500;
   color: #64748b;
   text-decoration: none;
   transition: all 0.2s;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .navLink:hover {

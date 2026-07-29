@@ -1374,7 +1374,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                             ) : getStatusName(unit.status)}
                           </div>
                           {unit.status === 'SOFT_BOOKED' && (
-                            <div className={styles.timerBadge}>
+                            <div className={`${styles.timerBadge} ${promoMap[unit.id] ? styles.vipBadgeShifted : ''}`}>
                               {getRemainingTime(unit.bookingExpiresAt)}
                             </div>
                           )}
@@ -1383,7 +1383,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                               АКЦИЯ
                             </div>
                           )}
-                          {unit.price > 300000 && unit.status === 'FREE' && <div className={styles.vipBadge}>VIP</div>}
+                          {unit.price > 300000 && unit.status === 'FREE' && (
+                            <div className={`${styles.vipBadge} ${promoMap[unit.id] ? styles.vipBadgeShifted : ''}`}>VIP</div>
+                          )}
                         </div>
                       </React.Fragment>
                     );
