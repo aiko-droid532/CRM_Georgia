@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import styles from './Pricing.module.css';
 import {
   getFilteredUnitsForPromotion,
@@ -36,35 +36,28 @@ const STATUS_BADGE_CLASS: Record<string, string> = {
   CANCELLED: 'badgeCancelled',
 };
 
-// Показ даты/времени всегда в часовом поясе Грузии (UTC+4, без перехода на летнее время) —
-// НЕ полагаемся на локальный часовой пояс браузера/компьютера (getHours/toLocaleString зависят от него
-// и поэтому "плывут", если у компьютера выставлен другой пояс).
-function toGeorgiaParts(d: string | Date) {
-  const date = new Date(d);
-  const shifted = new Date(date.getTime() + 4 * 60 * 60 * 1000);
-  return {
-    y: shifted.getUTCFullYear(),
-    m: shifted.getUTCMonth() + 1,
-    day: shifted.getUTCDate(),
-    h: shifted.getUTCHours(),
-    min: shifted.getUTCMinutes(),
-  };
-}
-
+// Даты/время акции всегда работают в РЕАЛЬНОМ локальном часовом поясе того, кто пользуется
+// платформой (браузер сам знает свой пояс — мы не хардкодим конкретную страну/смещение).
 function toDatetimeLocal(d?: string | Date): string {
   if (!d) return '';
-  const { y, m, day, h, min } = toGeorgiaParts(d);
+  const date = new Date(d);
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${y}-${pad(m)}-${pad(day)}T${pad(h)}:${pad(min)}`;
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
 // datetime-local input не содержит часового пояса — если интерпретировать такую строку
-// голым `new Date(...)` НА СЕРВЕРЕ, JS возьмёт локальный пояс сервера, а не Грузии, и время уедет.
-// Явно фиксируем смещение Грузии (UTC+4, без перехода на летнее время), чтобы сервер
-// разобрал момент времени правильно независимо от собственного часового пояса.
-function toGeorgiaISOString(datetimeLocal: string): string {
+// голым `new Date(...)` НА СЕРВЕРЕ, JS возьмёт локальный пояс сервера (не пользователя), и время уедет.
+// Поэтому явно дописываем РЕАЛЬНОЕ смещение часового пояса БРАУЗЕРА пользователя (не хардкодим страну) —
+// тогда сервер разберёт этот момент времени правильно, кто бы где ни находился.
+function toLocalTZISOString(datetimeLocal: string): string {
   if (!datetimeLocal) return '';
-  return `${datetimeLocal}:00+04:00`;
+  const probe = new Date(datetimeLocal); // интерпретируется в поясе браузера
+  const offsetMin = -probe.getTimezoneOffset(); // например, +300 для Казахстана (UTC+5)
+  const sign = offsetMin >= 0 ? '+' : '-';
+  const abs = Math.abs(offsetMin);
+  const oh = String(Math.floor(abs / 60)).padStart(2, '0');
+  const om = String(abs % 60).padStart(2, '0');
+  return `${datetimeLocal}:00${sign}${oh}:${om}`;
 }
 
 interface PricingClientProps {
@@ -83,6 +76,13 @@ export default function PricingClient({ projects, initialPromotions, organizatio
 
   const [activeTab, setActiveTab] = useState<'promotions' | 'mic'>('promotions');
   const [promotions, setPromotions] = useState(initialPromotions);
+  // Статус "Истекла" — вычисляемый (не хранится в БД), поэтому без тика по таймеру
+  // бейдж не обновится сам, пока не перезагрузить страницу — досчитываем каждые 30с.
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const interval = setInterval(() => setTick(t => t + 1), 30000);
+    return () => clearInterval(interval);
+  }, []);
   const [loading, setLoading] = useState(false);
 
   // ── Конструктор акции ──────────────────────────────────────────────────
@@ -206,8 +206,8 @@ export default function PricingClient({ projects, initialPromotions, organizatio
         effectValueType,
         effectValue,
         nbgRate,
-        startAt: toGeorgiaISOString(startAt),
-        endAt: toGeorgiaISOString(endAt),
+        startAt: toLocalTZISOString(startAt),
+        endAt: toLocalTZISOString(endAt),
         unitIds: finalUnits.map(u => u.id),
         organizationId,
       };

@@ -68,6 +68,8 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const [loading, setLoading] = useState(false);
   const [exchangeRate, setExchangeRate] = useState('2.70');
   // Карта активных акций по объектам организации (Модуль "Акции")
+  // Опрашивается периодически (не только при монтировании), чтобы бейдж/цена сами
+  // "гасли" по факту окончания акции, без ручной перезагрузки страницы.
   const [promoMap, setPromoMap] = useState<Record<string, any>>({});
   useEffect(() => {
     async function loadPromotions() {
@@ -77,6 +79,8 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       setPromoMap(map);
     }
     loadPromotions();
+    const interval = setInterval(loadPromotions, 30000);
+    return () => clearInterval(interval);
   }, [organizationId]);
   const [rateLoading, setRateLoading] = useState(true);
   const [panelTab, setPanelTab] = useState<'INFO' | 'DEAL' | 'CALC' | 'HISTORY'>('INFO');
