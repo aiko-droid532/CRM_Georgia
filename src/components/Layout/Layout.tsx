@@ -13,6 +13,7 @@ import {
   ReportsIcon,
   LogoIcon
 } from '../Icons';
+
 import NotificationBell from './NotificationBell';
 import { hasNavAccess, UserRole, ROLE_LABELS } from '@/lib/roles';
 
@@ -22,14 +23,15 @@ interface LayoutProps {
 }
 
 const NAV_ITEMS = [
-  { name: 'Аналитика',            path: '/',           icon: <AnalyticsIcon />, section: 'analytics'  },
-  { name: 'Управление клиентами', path: '/clients',    icon: <ClientsIcon />,   section: 'clients'    },
-  { name: 'Сделки',               path: '/deals',      icon: <DealsIcon />,     section: 'deals'      },
-  { name: 'Шахматка',             path: '/shakhmatka', icon: <GridIcon />,      section: 'shakhmatka' },
-  { name: 'Ценообразование',      path: '/pricing',    icon: <FinanceIcon />,   section: 'pricing'    },
-  { name: 'Договоры',             path: '/contracts',  icon: <ReportsIcon />,   section: 'contracts'  },
-  { name: 'Финансы',              path: '/finance',    icon: <FinanceIcon />,   section: 'finance'    },
-  { name: 'Отчеты',               path: '/reports',    icon: <ReportsIcon />,   section: 'reports'    },
+  { name: 'Аналитика',            path: '/',             icon: <AnalyticsIcon />, section: 'analytics'  },
+  { name: 'Управление клиентами', path: '/clients',      icon: <ClientsIcon />,   section: 'clients'    },
+  { name: 'Сделки',               path: '/deals',        icon: <DealsIcon />,     section: 'deals'      },
+  { name: 'Шахматка',             path: '/shakhmatka',   icon: <GridIcon />,      section: 'shakhmatka' },
+  { name: 'Ценообразование',      path: '/pricing',      icon: <FinanceIcon />,   section: 'pricing'    },
+  { name: 'Договоры',             path: '/contracts',    icon: <ReportsIcon />,   section: 'contracts'  },
+  { name: 'Финансы',              path: '/finance',      icon: <FinanceIcon />,   section: 'finance'    },
+  { name: 'Отчеты',               path: '/reports',      icon: <ReportsIcon />,   section: 'reports'    },
+  { name: 'Интеграция Georgia',    path: '/integration',  icon: <AnalyticsIcon />, section: 'analytics'  },
 ];
 
 const Layout: React.FC<LayoutProps> = ({ children, userRole = 'manager' }) => {
@@ -45,7 +47,8 @@ const Layout: React.FC<LayoutProps> = ({ children, userRole = 'manager' }) => {
       '/pricing': 'Ценообразование',
       '/contracts': 'Договоры',
       '/finance': 'Финансы',
-      '/reports': 'Отчеты'
+      '/reports': 'Отчеты',
+      '/integration': 'Интеграция Georgia'
     };
     const sectionName = sectionMap[pathname] || pathname;
     fetch('/api/logs', {
