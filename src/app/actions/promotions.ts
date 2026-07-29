@@ -107,12 +107,14 @@ export async function createPromotionDraft(data: {
       )
     `;
 
-    for (const unitId of data.unitIds) {
-      await prisma.$executeRaw`
-        INSERT INTO "PromotionUnit" ("id", "promotionId", "unitId", "createdAt")
-        VALUES (${crypto.randomUUID()}, ${id}, ${unitId}, NOW())
-      `;
-    }
+    await Promise.all(
+      data.unitIds.map(unitId =>
+        prisma.$executeRaw`
+          INSERT INTO "PromotionUnit" ("id", "promotionId", "unitId", "createdAt")
+          VALUES (${crypto.randomUUID()}, ${id}, ${unitId}, NOW())
+        `
+      )
+    );
 
     logAction('Создан черновик акции', { promotionId: id, name: data.name, units: data.unitIds.length });
     revalidatePath('/pricing');
@@ -214,12 +216,14 @@ export async function updatePromotionDraft(data: {
     `;
 
     await prisma.$executeRaw`DELETE FROM "PromotionUnit" WHERE "promotionId" = ${data.promotionId}`;
-    for (const unitId of data.unitIds) {
-      await prisma.$executeRaw`
-        INSERT INTO "PromotionUnit" ("id", "promotionId", "unitId", "createdAt")
-        VALUES (${crypto.randomUUID()}, ${data.promotionId}, ${unitId}, NOW())
-      `;
-    }
+    await Promise.all(
+      data.unitIds.map(unitId =>
+        prisma.$executeRaw`
+          INSERT INTO "PromotionUnit" ("id", "promotionId", "unitId", "createdAt")
+          VALUES (${crypto.randomUUID()}, ${data.promotionId}, ${unitId}, NOW())
+        `
+      )
+    );
 
     logAction('Отредактирована акция', { promotionId: data.promotionId, units: data.unitIds.length });
     revalidatePath('/pricing');
@@ -246,12 +250,14 @@ export async function approvePromotion(promotionId: string, approvedById: string
     const promoName = promos[0]?.name || '';
     const units: any[] = await prisma.$queryRaw`SELECT "unitId" FROM "PromotionUnit" WHERE "promotionId" = ${promotionId}`;
 
-    for (const u of units) {
-      await prisma.$executeRaw`
-        INSERT INTO "AuditLog" ("id", "action", "entityType", "entityId", "reason", "managerId", "organizationId", "createdAt")
-        VALUES (${crypto.randomUUID()}, 'PROMOTION_ADDED', 'Unit', ${u.unitId}, ${`Объект добавлен в акцию: ${promoName}`}, ${approvedById}, ${organizationId}, NOW())
-      `;
-    }
+    await Promise.all(
+      units.map((u: any) =>
+        prisma.$executeRaw`
+          INSERT INTO "AuditLog" ("id", "action", "entityType", "entityId", "reason", "managerId", "organizationId", "createdAt")
+          VALUES (${crypto.randomUUID()}, 'PROMOTION_ADDED', 'Unit', ${u.unitId}, ${`Объект добавлен в акцию: ${promoName}`}, ${approvedById}, ${organizationId}, NOW())
+        `
+      )
+    );
 
     revalidatePath('/pricing');
     revalidatePath('/shakhmatka');

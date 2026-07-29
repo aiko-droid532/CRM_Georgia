@@ -13,6 +13,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   padding: 0 20px;
   position: sticky;
   top: 0;
@@ -23,8 +24,15 @@
 .navLeft {
   display: flex;
   align-items: center;
-  gap: 28px;
+  gap: 20px;
   min-width: 0;
+  flex-shrink: 1;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.navLeft::-webkit-scrollbar {
+  display: none;
 }
 
 .logo {
@@ -49,16 +57,16 @@
   display: flex;
   gap: 2px;
   flex-wrap: nowrap;
-  min-width: 0;
+  flex-shrink: 0;
 }
 
 .navLink {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 12px;
+  gap: 6px;
+  padding: 6px 10px;
   border-radius: 6px;
-  font-size: 0.88rem;
+  font-size: 0.84rem;
   font-weight: 500;
   color: #64748b;
   text-decoration: none;
@@ -80,7 +88,12 @@
 .navRight {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 12px;
+  flex-shrink: 0;
+}
+
+.searchBox {
+  min-width: 0;
 }
 
 .searchBox input {
@@ -89,13 +102,13 @@
   padding: 6px 12px;
   border-radius: 6px;
   font-size: 0.85rem;
-  width: 200px;
+  width: 140px;
   outline: none;
   transition: width 0.2s;
 }
 
 .searchBox input:focus {
-  width: 260px;
+  width: 200px;
   background: #fff;
   border-color: #3b82f6;
 }

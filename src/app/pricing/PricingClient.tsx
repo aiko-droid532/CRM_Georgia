@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useMemo, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import styles from './Pricing.module.css';
 import {
   getFilteredUnitsForPromotion,
@@ -73,6 +74,7 @@ export default function PricingClient({ projects, initialPromotions, organizatio
   const canCreate = canCreatePromotions(role);
   const canApprove = canApprovePromotions(role);
   const canMic = canManagePrices(role);
+  const router = useRouter();
 
   const [activeTab, setActiveTab] = useState<'promotions' | 'mic'>('promotions');
   const [promotions, setPromotions] = useState(initialPromotions);
@@ -219,7 +221,7 @@ export default function PricingClient({ projects, initialPromotions, organizatio
         alert(editingId ? 'Акция обновлена.' : 'Черновик акции сохранён.');
         setShowConstructor(false);
         resetConstructor();
-        window.location.reload();
+        router.refresh();
       } else {
         alert('Ошибка: ' + (res.error || ''));
       }
@@ -233,7 +235,7 @@ export default function PricingClient({ projects, initialPromotions, organizatio
     setLoading(true);
     const res = await approvePromotion(id, managerId, organizationId);
     setLoading(false);
-    if (res.success) window.location.reload();
+    if (res.success) router.refresh();
     else alert('Ошибка: ' + (res.error || ''));
   }
 
@@ -242,7 +244,7 @@ export default function PricingClient({ projects, initialPromotions, organizatio
     setLoading(true);
     const res = await cancelPromotion(id, organizationId);
     setLoading(false);
-    if (res.success) window.location.reload();
+    if (res.success) router.refresh();
     else alert('Ошибка: ' + (res.error || ''));
   }
 
@@ -251,7 +253,7 @@ export default function PricingClient({ projects, initialPromotions, organizatio
     setLoading(true);
     const res = await deletePromotion(id, organizationId);
     setLoading(false);
-    if (res.success) window.location.reload();
+    if (res.success) router.refresh();
     else alert('Ошибка: ' + (res.error || ''));
   }
 
