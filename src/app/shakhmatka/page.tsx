@@ -45,6 +45,7 @@ export default async function ShakhmatkaPage({
       leads={leads} 
       organizationId={organizationId} 
       userRole={userRole}
+      managerId={managerId}
     />
   );
 }

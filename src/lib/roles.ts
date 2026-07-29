@@ -44,6 +44,39 @@ export function canManagePrices(role: UserRole): boolean {
   return ['admin', 'rop', 'senior_manager'].includes(role);
 }
 
+// ── Индивидуальная скидка (раздел "Скидка" в калькуляторе рассрочки) ────────
+// Пороги согласования по ролям — раздел 3 ТЗ "Акции и специальные предложения".
+// В оригинальном ТЗ пороги завязаны на Back-office/Топ-менеджмент/Совет директоров,
+// которых в нашей ролевой модели нет — согласовано, что маппим по нарастающей:
+// manager → senior_manager → rop → admin.
+const DISCOUNT_THRESHOLDS: Record<UserRole, number> = {
+  manager: 3,
+  senior_manager: 5,
+  rop: 10,
+  admin: Infinity,
+  lawyer: 0,
+  marketing: 0,
+  call_center: 0,
+};
+
+// Максимальный % скидки, который роль может сохранить самостоятельно
+export function getMaxDiscountPercent(role: UserRole): number {
+  return DISCOUNT_THRESHOLDS[role] ?? 0;
+}
+
+// Может ли роль сохранить скидку данного размера (в %) без дополнительного согласования
+export function canApplyDiscountPercent(role: UserRole, percent: number): boolean {
+  return percent <= getMaxDiscountPercent(role);
+}
+
+// Кто должен согласовать скидку такого размера — для текста подсказки в интерфейсе
+export function getRequiredApproverLabel(percent: number): string {
+  if (percent <= 3) return 'Менеджер';
+  if (percent <= 5) return 'Старший менеджер';
+  if (percent <= 10) return 'Руководитель ОП';
+  return 'Администратор';
+}
+
 // Может создавать черновик акции (конструктор акций)
 export function canCreatePromotions(role: UserRole): boolean {
   return ['admin', 'rop', 'senior_manager', 'manager'].includes(role);

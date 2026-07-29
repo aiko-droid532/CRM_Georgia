@@ -2,7 +2,7 @@
 
 import { db as prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
-import { requireRole, canManageDeals } from '@/lib/roles';
+import { requireRole, canManageDeals, canApplyDiscountPercent, getMaxDiscountPercent, getRequiredApproverLabel } from '@/lib/roles';
 
 // Получить все сделки организации через прямой JOIN SQL (очень быстро и безопасно для PgBouncer)
 export async function getDeals(organizationId: string) {
@@ -177,7 +177,7 @@ export async function updateDealStatus(dealId: string, status: any, previousStat
           WHERE "id" = ${deal.unitId}
         `;
       }
-      
+
       // Логируем причину расторжения в ChangeLog
       if (status === 'CANCELLED') {
         const leadRows: any[] = await prisma.$queryRaw`
@@ -618,9 +618,21 @@ export async function saveInstallmentPlanAction(data: {
   customScheduleFileUrl?: string;
   schedule: Array<{ date: string; amountUSD: number; amountGEL: number }>;
   organizationId: string;
+  initiatorId: string;
 }) {
   try {
-    await requireRole(canManageDeals, 'сохранение графика рассрочки');
+    const role = await requireRole(canManageDeals, 'сохранение графика рассрочки');
+
+    // Индивидуальная скидка — пороги согласования по ролям (раздел 3 ТЗ "Акции и специальные предложения")
+    const discountPercent = data.basePriceUSD > 0
+      ? Math.round(((data.basePriceUSD - data.finalPriceUSD) / data.basePriceUSD) * 1000) / 10
+      : 0;
+    if (discountPercent > 0 && !canApplyDiscountPercent(role, discountPercent)) {
+      return {
+        success: false,
+        error: `Скидка ${discountPercent}% превышает порог вашей роли (до ${getMaxDiscountPercent(role)}%). Требуется согласование: ${getRequiredApproverLabel(discountPercent)}.`,
+      };
+    }
 
     await prisma.$executeRaw`
       UPDATE "Deal"
@@ -632,6 +644,9 @@ export async function saveInstallmentPlanAction(data: {
         "basePriceUSD" = ${data.basePriceUSD},
         "discountApplyType" = ${data.discountApplyType},
         "discountAmountUSD" = ${data.discountAmountUSD},
+        "discountPercent" = ${discountPercent},
+        "discountApprovedById" = ${discountPercent > 0 ? data.initiatorId : null},
+        "discountApprovedByRole" = ${discountPercent > 0 ? role : null},
         "nbgRate" = ${data.nbgRate},
         "firstPaymentDate" = ${data.firstPaymentDate},
         "firstPaymentPercent" = ${data.firstPaymentPercent},

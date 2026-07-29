@@ -3,7 +3,7 @@
 import { db as prisma, Prisma } from '@/lib/db';
 import { revalidatePath } from 'next/cache';
 import { logAction } from '@/lib/logger';
-import { requireRole, canManageDeals, canManageUnits } from '@/lib/roles';
+import { requireRole, canManageDeals, canManageUnits, canApplyDiscountPercent, getMaxDiscountPercent, getRequiredApproverLabel } from '@/lib/roles';
 
 export async function createClient(formData: {
   name: string;
@@ -33,11 +33,11 @@ export async function createClient(formData: {
     `;
 
     if (existingByPhone.length > 0) {
-      return { 
-        success: false, 
-        error: 'DUPLICATE', 
+      return {
+        success: false,
+        error: 'DUPLICATE',
         message: `Клиент с таким номером уже существует: ${existingByPhone[0].name}`,
-        existingClientId: existingByPhone[0].id 
+        existingClientId: existingByPhone[0].id
       };
     }
 
@@ -50,11 +50,11 @@ export async function createClient(formData: {
       `;
 
       if (existingByIIN.length > 0) {
-        return { 
-          success: false, 
-          error: 'DUPLICATE', 
+        return {
+          success: false,
+          error: 'DUPLICATE',
           message: `Клиент с таким ИИН уже существует: ${existingByIIN[0].name}`,
-          existingClientId: existingByIIN[0].id 
+          existingClientId: existingByIIN[0].id
         };
       }
     }
@@ -68,11 +68,11 @@ export async function createClient(formData: {
       `;
 
       if (existingByPN.length > 0) {
-        return { 
-          success: false, 
-          error: 'DUPLICATE', 
+        return {
+          success: false,
+          error: 'DUPLICATE',
           message: `Клиент с таким Personal Number уже существует: ${existingByPN[0].name}`,
-          existingClientId: existingByPN[0].id 
+          existingClientId: existingByPN[0].id
         };
       }
     }
@@ -385,7 +385,7 @@ export async function assignLeadToManager(leadId: string, managerId: string) {
       WHERE "id" = ${leadId} AND "managerId" IS NULL
     `;
     if (res === 0) return { success: false, error: 'Лид уже взят в работу другим менеджером!' };
-    
+
     revalidatePath('/clients');
     return { success: true };
   } catch (error) {
@@ -399,9 +399,9 @@ export async function logCallAttempt(leadId: string) {
     await requireRole(canManageDeals, 'фиксация звонка по лиду');
     const leads: any[] = await prisma.$queryRaw`SELECT "callAttempts" FROM "Lead" WHERE id = ${leadId}`;
     if (!leads.length) return { success: false };
-    
+
     let attempts = (leads[0].callAttempts || 0) + 1;
-    
+
     if (attempts >= 3) {
       await prisma.$executeRaw`
         UPDATE "Lead" SET "callAttempts" = ${attempts}, "status" = 'LOST', "updatedAt" = NOW() WHERE id = ${leadId}
@@ -429,7 +429,7 @@ export async function logCallAttempt(leadId: string) {
         WHERE "leadId" = ${leadId} AND "status" NOT IN ('SUCCESS', 'FAILED', 'CANCELLED')
       `;
     }
-    
+
     revalidatePath('/clients');
     revalidatePath('/deals');
     return { success: true, attempts };
@@ -468,15 +468,15 @@ export async function createDeal(data: {
     const lead = leads[0];
 
     if (!lead || !lead.phone || !lead.source) {
-      return { 
-        success: false, 
-        error: 'VALIDATION_FAILED', 
-        message: 'У клиента должен быть указан телефон и источник для создания сделки!' 
+      return {
+        success: false,
+        error: 'VALIDATION_FAILED',
+        message: 'У клиента должен быть указан телефон и источник для создания сделки!'
       };
     }
 
     const dealId = crypto.randomUUID();
-    
+
     await prisma.$executeRaw`
       INSERT INTO "Deal" ("id", "leadId", "unitId", "status", "organizationId", "managerId", "createdAt", "updatedAt")
       VALUES (${dealId}, ${data.leadId}, ${data.unitId}, 'NEW_LEAD', ${data.organizationId}, ${data.managerId}, NOW(), NOW())
@@ -737,18 +737,33 @@ export async function savePaymentScheduleAction(data: {
   paymentType: string;
   downPayment: number;
   totalAmount: number;
+  basePriceUSD?: number;
   exchangeRate: number;
   schedule: Array<{ date: string; amountUSD: number; amountGEL: number }>;
   organizationId: string;
+  initiatorId?: string;
 }) {
   try {
-    await requireRole(canManageDeals, 'сохранение графика платежей');
+    const role = await requireRole(canManageDeals, 'сохранение графика платежей');
+
+    // Индивидуальная скидка — пороги согласования по ролям
+    const basePrice = data.basePriceUSD ?? data.totalAmount;
+    const discountPercent = basePrice > 0
+      ? Math.round(((basePrice - data.totalAmount) / basePrice) * 1000) / 10
+      : 0;
+    if (discountPercent > 0 && !canApplyDiscountPercent(role, discountPercent)) {
+      return {
+        success: false,
+        error: `Скидка ${discountPercent}% превышает порог вашей роли (до ${getMaxDiscountPercent(role)}%). Требуется согласование: ${getRequiredApproverLabel(discountPercent)}.`,
+      };
+    }
+
     let dealId = '';
-    
+
     const deals: any[] = await prisma.$queryRaw`
       SELECT id FROM "Deal" WHERE "leadId" = ${data.leadId} AND "unitId" = ${data.unitId} LIMIT 1
     `;
-    
+
     if (deals.length > 0) {
       dealId = deals[0].id;
     } else {
@@ -764,7 +779,11 @@ export async function savePaymentScheduleAction(data: {
 
     await prisma.$executeRaw`
       UPDATE "Deal" 
-      SET "paymentType" = ${data.paymentType}, "downPayment" = ${data.downPayment}, "totalAmount" = ${data.totalAmount}, "updatedAt" = NOW()
+      SET "paymentType" = ${data.paymentType}, "downPayment" = ${data.downPayment}, "totalAmount" = ${data.totalAmount},
+        "discountPercent" = ${discountPercent},
+        "discountApprovedById" = ${discountPercent > 0 ? (data.initiatorId || null) : null},
+        "discountApprovedByRole" = ${discountPercent > 0 ? role : null},
+        "updatedAt" = NOW()
       WHERE id = ${dealId}
     `;
 

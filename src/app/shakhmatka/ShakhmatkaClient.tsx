@@ -29,16 +29,17 @@ import {
   type InstallmentResult,
 } from '@/lib/installmentCalculator';
 
-import { canManageUnits, canManagePrices, canManageDeals, isReadOnly, UserRole } from '@/lib/roles';
+import { canManageUnits, canManagePrices, canManageDeals, isReadOnly, canApplyDiscountPercent, getMaxDiscountPercent, getRequiredApproverLabel, UserRole } from '@/lib/roles';
 
 interface ShakhmatkaClientProps {
   projects: any[];
   leads: any[];
   organizationId: string;
   userRole?: string;
+  managerId?: string;
 }
 
-export default function ShakhmatkaClient({ projects: initialProjects, leads, organizationId, userRole = 'manager' }: ShakhmatkaClientProps) {
+export default function ShakhmatkaClient({ projects: initialProjects, leads, organizationId, userRole = 'manager', managerId = '' }: ShakhmatkaClientProps) {
   const role = userRole as UserRole;
   const canUnits = canManageUnits(role);
   const canPrices = canManagePrices(role);
@@ -423,6 +424,12 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const calcLiveFinalPrice: number = selectedUnit
     ? calcFinalPrice(selectedUnit.area, calcUnitEffectivePricePerSqm, calcDiscountApplyType, calcDiscountAmount)
     : 0;
+  // Индивидуальная скидка — пороги согласования по ролям
+  const calcBasePriceForDiscount = selectedUnit ? calcBasePrice(selectedUnit.area, calcUnitEffectivePricePerSqm) : 0;
+  const calcDiscountPercent = calcBasePriceForDiscount > 0
+    ? Math.round(((calcBasePriceForDiscount - calcLiveFinalPrice) / calcBasePriceForDiscount) * 1000) / 10
+    : 0;
+  const calcDiscountAllowed = canApplyDiscountPercent(role, calcDiscountPercent);
   const calcAutoDates = computeAutoScheduleDates(calcFirstPaymentDate, calcEffectiveDeliveryDate);
   const calcMonthsCount = Math.max(1, calcPeriodsCount(calcAutoDates.scheduleStartDate, calcAutoDates.scheduleEndDate, calcPeriodicity));
 
@@ -562,6 +569,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
         customScheduleFileUrl: calcCustomFileUrl,
         schedule: calcResult.schedule.map(r => ({ date: r.date, amountUSD: r.amountUSD, amountGEL: r.amountGEL })),
         organizationId,
+        initiatorId: managerId,
       });
       if (res.success) {
         alert('График рассрочки сохранён и привязан к сделке.');
@@ -599,6 +607,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
       installmentComment: 'Полная оплата (объект сдан)',
       schedule: [{ date: calcFullPaymentDate, amountUSD: selectedUnit.price, amountGEL: Math.round(selectedUnit.price * calcNbgRate) }],
       organizationId,
+      initiatorId: managerId,
     }).then(res => {
       alert(res.success ? 'Платёж сохранён.' : 'Ошибка: ' + (res.error || ''));
     }).finally(() => setCalcSaving(false));
@@ -1582,9 +1591,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                           <UnitLayoutSvg rooms={selectedUnit.rooms} area={selectedUnit.area} layoutUrl={selectedUnit.layoutUrl} width="100%" height={450} />
                         ) : (
                           selectedUnit.layout3dUrl.match(/\.(jpeg|jpg|gif|png|webp)/i) != null || selectedUnit.layout3dUrl.includes('/upload') || selectedUnit.layout3dUrl.includes('supabase') ? (
-                            <img 
-                              src={selectedUnit.layout3dUrl} 
-                              alt="3D Визуализация квартиры" 
+                            <img
+                              src={selectedUnit.layout3dUrl}
+                              alt="3D Визуализация квартиры"
                               style={{ maxWidth: '100%', maxHeight: '450px', objectFit: 'contain', borderRadius: '6px' }}
                             />
                           ) : (
@@ -1592,12 +1601,12 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                               {selectedUnit.layout3dUrl.includes('<iframe') ? (
                                 <div dangerouslySetInnerHTML={{ __html: selectedUnit.layout3dUrl }} />
                               ) : (
-                                <iframe 
-                                  src={selectedUnit.layout3dUrl} 
-                                  width="100%" 
-                                  height="450px" 
-                                  style={{ border: 'none', borderRadius: '8px' }} 
-                                  allowFullScreen 
+                                <iframe
+                                  src={selectedUnit.layout3dUrl}
+                                  width="100%"
+                                  height="450px"
+                                  style={{ border: 'none', borderRadius: '8px' }}
+                                  allowFullScreen
                                 />
                               )}
                             </div>
@@ -1615,8 +1624,8 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                             {selectedUnit.associatedLeadName?.[0]?.toUpperCase() || ''}
                           </div>
                           <div className={styles.clientMetaBox}>
-                            <button 
-                              type="button" 
+                            <button
+                              type="button"
                               className={styles.clientDossierLink}
                               onClick={() => handleOpenClientDossier(selectedUnit.associatedLeadId)}
                             >
@@ -1641,9 +1650,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
 
               {/* Подвкладка 2: Оформление сделки и Бронь */}
               <div className={styles.accordionItem}>
-                <button 
-                  type="button" 
-                  className={styles.accordionHeader} 
+                <button
+                  type="button"
+                  className={styles.accordionHeader}
                   onClick={() => toggleAccordion('deal')}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}> Оформление сделки и бронь</span>
@@ -1651,7 +1660,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                 </button>
                 {activeAccordions.deal && (
                   <div className={styles.accordionContent}>
-                    
+
                     {/* Управление статусом */}
                     <div style={{ background: '#f8fafc', padding: '16px', borderRadius: '12px', border: '1px solid #e2e8f0' }}>
                       <strong style={{ display: 'block', fontSize: '0.9rem', color: '#475569', marginBottom: '12px' }}>Управление бронированием</strong>
@@ -1660,23 +1669,23 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                           <div>
                             <span className={styles.bookingLabel}>Тип брони</span>
                             <div className={styles.bookingTypeTabs}>
-                              <button 
+                              <button
                                 type="button"
-                                className={`${styles.bookingTypeTab} ${bookingType === 'SOFT' ? styles.bookingTypeTabActiveSoft : ''}`} 
+                                className={`${styles.bookingTypeTab} ${bookingType === 'SOFT' ? styles.bookingTypeTabActiveSoft : ''}`}
                                 onClick={() => setBookingType('SOFT')}
                               >
                                 Устная (Soft)
                               </button>
-                              <button 
+                              <button
                                 type="button"
-                                className={`${styles.bookingTypeTab} ${bookingType === 'HARD' ? styles.bookingTypeTabActiveHard : ''}`} 
+                                className={`${styles.bookingTypeTab} ${bookingType === 'HARD' ? styles.bookingTypeTabActiveHard : ''}`}
                                 onClick={() => setBookingType('HARD')}
                               >
                                 Платная (Hard)
                               </button>
-                              <button 
+                              <button
                                 type="button"
-                                className={`${styles.bookingTypeTab} ${bookingType === 'SERVICE' ? styles.bookingTypeTabActiveService : ''}`} 
+                                className={`${styles.bookingTypeTab} ${bookingType === 'SERVICE' ? styles.bookingTypeTabActiveService : ''}`}
                                 onClick={() => setBookingType('SERVICE')}
                               >
                                 Служебная
@@ -1688,9 +1697,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                             {bookingType === 'SOFT' && (
                               <>
                                 <span className={styles.bookingLabel}>Срок устной брони</span>
-                                <select 
-                                  value={softDuration} 
-                                  onChange={(e) => setSoftDuration(e.target.value)} 
+                                <select
+                                  value={softDuration}
+                                  onChange={(e) => setSoftDuration(e.target.value)}
                                   className={styles.leadSelect}
                                 >
                                   <option value="0.5">30 минут</option>
@@ -1702,9 +1711,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                             {bookingType === 'HARD' && (
                               <>
                                 <span className={styles.bookingLabel}>Срок платной брони</span>
-                                <select 
-                                  value={hardDuration} 
-                                  onChange={(e) => setHardDuration(e.target.value)} 
+                                <select
+                                  value={hardDuration}
+                                  onChange={(e) => setHardDuration(e.target.value)}
                                   className={styles.leadSelect}
                                 >
                                   <option value="7">7 дней</option>
@@ -1717,10 +1726,10 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                                 {hardDuration === 'CUSTOM' && (
                                   <div style={{ marginTop: '12px' }}>
                                     <span className={styles.bookingLabel}>Календарь бронирования</span>
-                                    <input 
-                                      type="datetime-local" 
-                                      value={customHardDateTime} 
-                                      onChange={(e) => setCustomHardDateTime(e.target.value)} 
+                                    <input
+                                      type="datetime-local"
+                                      value={customHardDateTime}
+                                      onChange={(e) => setCustomHardDateTime(e.target.value)}
                                       className={styles.leadSelect}
                                       min={new Date().toISOString().slice(0, 16)}
                                     />
@@ -1738,9 +1747,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
 
                           <div style={{ marginBottom: '14px' }}>
                             <span className={styles.bookingLabel}>Выберите клиента</span>
-                            <select 
-                              value={selectedLeadId} 
-                              onChange={(e) => setSelectedLeadId(e.target.value)} 
+                            <select
+                              value={selectedLeadId}
+                              onChange={(e) => setSelectedLeadId(e.target.value)}
                               className={styles.leadSelect}
                             >
                               <option value="">Выберите клиента...</option>
@@ -1749,9 +1758,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                           </div>
 
                           {!readOnly && (
-                            <button 
-                              onClick={onBook} 
-                              disabled={loading || !selectedLeadId} 
+                            <button
+                              onClick={onBook}
+                              disabled={loading || !selectedLeadId}
                               className={styles.bookBtn}
                               style={{ padding: '10px', fontSize: '0.9rem', width: '100%' }}
                             >
@@ -1783,9 +1792,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                             </p>
                           </div>
                           {!readOnly && (
-                            <button 
-                              onClick={onReleaseBook} 
-                              disabled={loading} 
+                            <button
+                              onClick={onReleaseBook}
+                              disabled={loading}
                               className={styles.bookBtn}
                               style={{ background: 'linear-gradient(135deg, #ef4444, #dc2626)', padding: '10px', width: '100%' }}
                             >
@@ -1806,21 +1815,21 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                     {/* Очередь (Лист ожидания) */}
                     <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: '12px', padding: '16px' }}>
                       <strong style={{ display: 'block', fontSize: '0.9rem', color: '#475569', marginBottom: '12px' }}> Лист ожидания (Очередь)</strong>
-                      
+
                       {waitingList.length === 0 ? (
                         <p style={{ margin: '0 0 16px 0', fontSize: '0.85rem', color: '#64748b', fontStyle: 'italic' }}>В очереди пока нет клиентов.</p>
                       ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                           {waitingList.map((item, idx) => (
-                            <div 
-                              key={item.id} 
-                              style={{ 
-                                display: 'flex', 
-                                alignItems: 'center', 
+                            <div
+                              key={item.id}
+                              style={{
+                                display: 'flex',
+                                alignItems: 'center',
                                 justifyContent: 'space-between',
-                                background: '#f8fafc', 
-                                border: '1px solid #e2e8f0', 
-                                borderRadius: '8px', 
+                                background: '#f8fafc',
+                                border: '1px solid #e2e8f0',
+                                borderRadius: '8px',
                                 padding: '8px 12px',
                               }}
                             >
@@ -1834,7 +1843,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                                 )}
                               </div>
                               {!readOnly && (
-                                <button 
+                                <button
                                   onClick={() => handleRemoveFromQueue(item.id)}
                                   style={{ background: 'none', border: 'none', color: '#ef4444', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700 }}
                                 >
@@ -1851,7 +1860,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', borderTop: '1px solid #f1f5f9', paddingTop: '12px' }}>
                           <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#64748b', textTransform: 'uppercase' }}>Добавить клиента в очередь</span>
                           <div style={{ display: 'flex', gap: '8px' }}>
-                            <select 
+                            <select
                               value={wlLeadId}
                               onChange={e => setWlLeadId(e.target.value)}
                               style={{ flex: 1, padding: '8px', border: '1px solid #cbd5e1', borderRadius: '8px', fontSize: '0.8rem', background: 'white' }}
@@ -1863,7 +1872,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                                 </option>
                               ))}
                             </select>
-                            <button 
+                            <button
                               onClick={handleAddToQueue}
                               disabled={wlSubmitting || !wlLeadId}
                               style={{ background: '#0f172a', color: 'white', border: 'none', borderRadius: '8px', padding: '8px 14px', cursor: 'pointer', fontSize: '0.8rem', fontWeight: 700, opacity: (!wlLeadId || wlSubmitting) ? 0.6 : 1 }}
@@ -1881,9 +1890,9 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
 
               {/* Подвкладка 3: Калькулятор рассрочки */}
               <div className={styles.accordionItem}>
-                <button 
-                  type="button" 
-                  className={styles.accordionHeader} 
+                <button
+                  type="button"
+                  className={styles.accordionHeader}
                   onClick={() => toggleAccordion('calc')}
                 >
                   <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}> Калькулятор рассрочки</span>
@@ -2013,6 +2022,18 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                           <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#475569' }}>
                             Итоговая цена (с учётом скидки): <strong>${calcLiveFinalPrice.toLocaleString()}</strong>
                           </div>
+                          {calcDiscountPercent > 0 && (
+                            <div style={{
+                              marginTop: '10px', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 600,
+                              background: calcDiscountAllowed ? '#f0fdf4' : '#fef2f2',
+                              color: calcDiscountAllowed ? '#166534' : '#dc2626',
+                              border: `1px solid ${calcDiscountAllowed ? '#bbf7d0' : '#fecaca'}`
+                            }}>
+                              Скидка {calcDiscountPercent}%{calcDiscountAllowed
+                                ? ' — в пределах вашего порога согласования.'
+                                : ` — превышает ваш порог (до ${getMaxDiscountPercent(role)}%). Требуется согласование: ${getRequiredApproverLabel(calcDiscountPercent)}.`}
+                            </div>
+                          )}
                         </div>
 
                         {/* Блок: График платежей — 3 колонки × 3 строки: Дата | Сумма $ | % */}
@@ -2119,7 +2140,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                               <button type="button" onClick={() => exportScheduleCsv(calcResult.schedule, 'ENG', selectedUnit.number)} style={{ padding: '8px 12px', background: '#f1f5f9', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem' }}>Schedule (ENG)</button>
                               <button type="button" onClick={() => exportScheduleCsv(calcResult.schedule, 'GEO', selectedUnit.number)} style={{ padding: '8px 12px', background: '#f1f5f9', border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: 700, fontSize: '0.8rem' }}>გრაფიკი (GEO)</button>
                               {canDeals && !readOnly && (
-                                <button type="button" disabled={!calcResult.isValid || !calcDealId || calcSaving} onClick={handleSaveInstallmentPlan} className={styles.modalSaveBtn} style={{ marginLeft: 'auto' }}>
+                                <button type="button" disabled={!calcResult.isValid || !calcDealId || calcSaving || !calcDiscountAllowed} onClick={handleSaveInstallmentPlan} className={styles.modalSaveBtn} style={{ marginLeft: 'auto' }}>
                                   {calcSaving ? 'Сохранение...' : 'Сохранить график к сделке'}
                                 </button>
                               )}

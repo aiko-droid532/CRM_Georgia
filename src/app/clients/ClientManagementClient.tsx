@@ -1161,6 +1161,7 @@ export default function ClientManagementClient({ initialLeads, projects, organiz
           onClose={() => setSelectedClient(null)}
           organizationId={organizationId}
           userRole={userRole}
+          managerId={currentManagerId}
         />
       )}
 

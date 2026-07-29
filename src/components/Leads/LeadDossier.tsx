@@ -17,7 +17,7 @@ import { getExchangeRate } from "@/app/actions/exchange";
 import { getUnitForCalculator } from "@/app/actions/units";
 import { getLivePromotionForUnit } from "@/app/actions/promotions";
 import { calcPromoPrice, formatEffectSummary } from "@/lib/promotionCalculator";
-import { canManageDeals, isReadOnly, UserRole } from "@/lib/roles";
+import { canManageDeals, isReadOnly, canApplyDiscountPercent, getMaxDiscountPercent, getRequiredApproverLabel, UserRole } from "@/lib/roles";
 import {
   calculateInstallmentPlan,
   applyStandardPreset,
@@ -40,6 +40,7 @@ interface LeadDossierProps {
   onClose: () => void;
   organizationId: string;
   userRole?: string;
+  managerId?: string;
 }
 
 type Tab = "info" | "interests" | "finance" | "history";
@@ -60,6 +61,7 @@ export default function LeadDossier({
   onClose,
   organizationId,
   userRole = "manager",
+  managerId = "",
 }: LeadDossierProps) {
   const role = userRole as UserRole;
   const canManage = canManageDeals(role);
@@ -314,6 +316,12 @@ export default function LeadDossier({
         calcDiscountAmount
       )
     : 0;
+  // Индивидуальная скидка — пороги согласования по ролям
+  const calcBasePriceForDiscount = calcUnitEffectivePrice || 0;
+  const calcDiscountPercent = calcBasePriceForDiscount > 0
+    ? Math.round(((calcBasePriceForDiscount - calcLiveFinalPrice) / calcBasePriceForDiscount) * 1000) / 10
+    : 0;
+  const calcDiscountAllowed = canApplyDiscountPercent(role, calcDiscountPercent);
   const calcAutoDates = computeAutoScheduleDates(calcFirstPaymentDate, calcEffectiveDeliveryDate);
   const calcMonthsCount = Math.max(1, calcPeriodsCount(calcAutoDates.scheduleStartDate, calcAutoDates.scheduleEndDate, calcPeriodicity));
 
@@ -451,7 +459,7 @@ export default function LeadDossier({
     const res = await updateClient({
       id: lead.id,
       ...dataToSave,
-      managerId: organizationId,
+      managerId,
     });
     if (res.success) {
       setIsEditing(false);
@@ -487,7 +495,9 @@ export default function LeadDossier({
       unitId,
       interestId,
       organizationId,
-      managerId: organizationId,
+      // Сделка закрепляется за менеджером-владельцем лида, а не тем, кто нажал кнопку
+      // (например, старший менеджер/РОП может создать сделку по чужому лиду)
+      managerId: lead.managerId || managerId,
     });
 
     if (res.success) {
@@ -596,10 +606,12 @@ export default function LeadDossier({
       unitId: selectedInterestForCalc.unitId,
       paymentType: paymentScheme,
       downPayment: paymentScheme === "INSTALLMENT" ? derivedFirstAmount : (calcUnitEffectivePrice || 0),
-      totalAmount: calcUnitEffectivePrice || 0,
+      totalAmount: paymentScheme === "INSTALLMENT" ? (calcResult?.finalPriceUSD ?? calcLiveFinalPrice) : (calcUnitEffectivePrice || 0),
+      basePriceUSD: calcUnitEffectivePrice || 0,
       exchangeRate: parseFloat(exchangeRate || "1"),
       schedule,
       organizationId,
+      initiatorId: managerId,
     });
 
     if (res.success) {
@@ -1593,6 +1605,18 @@ export default function LeadDossier({
                                Действует акция «{calcActivePromo.name}»: {formatEffectSummary(calcActivePromo)} — цена уже пересчитана
                             </div>
                           )}
+                          {calcDiscountPercent > 0 && (
+                            <div style={{
+                              fontSize: "0.72rem", fontWeight: 700, borderRadius: "8px", padding: "6px 10px", margin: "6px 0",
+                              background: calcDiscountAllowed ? "#f0fdf4" : "#fef2f2",
+                              color: calcDiscountAllowed ? "#166534" : "#dc2626",
+                              border: `1px solid ${calcDiscountAllowed ? "#bbf7d0" : "#fecaca"}`
+                            }}>
+                              Скидка {calcDiscountPercent}%{calcDiscountAllowed
+                                ? " — в пределах вашего порога согласования."
+                                : ` — превышает ваш порог (до ${getMaxDiscountPercent(role)}%). Нужно согласование: ${getRequiredApproverLabel(calcDiscountPercent)}.`}
+                            </div>
+                          )}
 
                           {calcScheduleType === "STANDARD" && (
                             <button type="button" onClick={handleApplyStandardPreset} style={{ margin: "6px 0", padding: "6px 10px", fontSize: "0.72rem", background: "#f1f5f9", border: "none", borderRadius: "6px", cursor: "pointer", fontWeight: 700, color: "#475569" }}>
@@ -1684,6 +1708,8 @@ export default function LeadDossier({
                             <button
                               className={styles.saveScheduleBtn}
                               onClick={handleSaveSchedule}
+                              disabled={!calcDiscountAllowed}
+                              title={!calcDiscountAllowed ? `Скидка ${calcDiscountPercent}% требует согласования: ${getRequiredApproverLabel(calcDiscountPercent)}` : undefined}
                             >
                               Сохранить расчет
                             </button>
