@@ -14,6 +14,11 @@ import {
 } from '@/app/actions/promotions';
 import { massUpdatePrices } from '@/app/actions/units';
 import {
+  getCumulativeDiscountTiers,
+  upsertCumulativeDiscountTier,
+  deleteCumulativeDiscountTier,
+} from '@/app/actions/loyalty';
+import {
   EFFECT_TYPE_LABELS,
   computeDisplayStatus,
   formatEffectSummary,
@@ -74,9 +79,56 @@ export default function PricingClient({ projects, initialPromotions, organizatio
   const canCreate = canCreatePromotions(role);
   const canApprove = canApprovePromotions(role);
   const canMic = canManagePrices(role);
+
+  // ── Накопительные скидки (Этап 2.2) ──────────────────────────────────────
+  const [loyaltyTiers, setLoyaltyTiers] = useState<any[]>([]);
+  const [loyaltyMinPurchases, setLoyaltyMinPurchases] = useState(2);
+  const [loyaltyPercent, setLoyaltyPercent] = useState(0);
+  const [editingLoyaltyId, setEditingLoyaltyId] = useState<string | null>(null);
+
+  useEffect(() => {
+    getCumulativeDiscountTiers(organizationId).then(setLoyaltyTiers);
+  }, [organizationId]);
+
+  function handleEditLoyaltyTier(t: any) {
+    setEditingLoyaltyId(t.id);
+    setLoyaltyMinPurchases(t.minPurchases);
+    setLoyaltyPercent(t.discountPercent);
+  }
+
+  async function handleSaveLoyaltyTier() {
+    setLoading(true);
+    const res = await upsertCumulativeDiscountTier({
+      id: editingLoyaltyId || undefined,
+      minPurchases: loyaltyMinPurchases,
+      discountPercent: loyaltyPercent,
+      organizationId,
+    });
+    setLoading(false);
+    if (res.success) {
+      setEditingLoyaltyId(null);
+      setLoyaltyMinPurchases(2);
+      setLoyaltyPercent(0);
+      getCumulativeDiscountTiers(organizationId).then(setLoyaltyTiers);
+    } else {
+      alert('Ошибка: ' + (res.error || ''));
+    }
+  }
+
+  async function handleDeleteLoyaltyTier(id: string) {
+    if (!confirm('Удалить уровень?')) return;
+    setLoading(true);
+    const res = await deleteCumulativeDiscountTier(id, organizationId);
+    setLoading(false);
+    if (res.success) {
+      getCumulativeDiscountTiers(organizationId).then(setLoyaltyTiers);
+    } else {
+      alert('Ошибка: ' + (res.error || ''));
+    }
+  }
   const router = useRouter();
 
-  const [activeTab, setActiveTab] = useState<'promotions' | 'mic'>('promotions');
+  const [activeTab, setActiveTab] = useState<'promotions' | 'mic' | 'loyalty'>('promotions');
   const [promotions, setPromotions] = useState(initialPromotions);
   // Статус "Истекла" — вычисляемый (не хранится в БД), поэтому без тика по таймеру
   // бейдж не обновится сам, пока не перезагрузить страницу — досчитываем каждые 30с.
@@ -312,6 +364,7 @@ export default function PricingClient({ projects, initialPromotions, organizatio
       <div className={styles.tabs}>
         <button className={`${styles.tab} ${activeTab === 'promotions' ? styles.tabActive : ''}`} onClick={() => setActiveTab('promotions')}>Акции</button>
         <button className={`${styles.tab} ${activeTab === 'mic' ? styles.tabActive : ''}`} onClick={() => setActiveTab('mic')}>Массовое изменение цен</button>
+        <button className={`${styles.tab} ${activeTab === 'loyalty' ? styles.tabActive : ''}`} onClick={() => setActiveTab('loyalty')}>Накопительные скидки</button>
       </div>
 
       {activeTab === 'promotions' && (
@@ -419,6 +472,59 @@ export default function PricingClient({ projects, initialPromotions, organizatio
                 {loading ? '...' : 'Применить'}
               </button>
             </>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'loyalty' && (
+        <div style={{ background: '#fff', border: '1px solid #e2e8f0', borderRadius: '16px', padding: '24px', maxWidth: '760px' }}>
+          <p style={{ color: '#64748b', fontSize: '0.85rem', marginTop: 0 }}>
+            Скидка применяется автоматически по количеству предыдущих покупок клиента (без учёта отменённых сделок, только на самого клиента — связанные лица пока не учитываются).
+            Уровней пока нет — ничего не применяется, пока вы не добавите хотя бы один.
+          </p>
+          {loyaltyTiers.length > 0 && (
+            <table className={styles.table} style={{ marginBottom: '16px' }}>
+              <thead>
+                <tr><th>От какой покупки (включительно)</th><th>Скидка (%)</th><th></th></tr>
+              </thead>
+              <tbody>
+                {loyaltyTiers.map((t: any) => (
+                  <tr key={t.id}>
+                    <td>{t.minPurchases}-я и далее</td>
+                    <td>{t.discountPercent}%</td>
+                    <td>
+                      {canApprove && (
+                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                          <button className={styles.secondaryBtn} onClick={() => handleEditLoyaltyTier(t)}>Редактировать</button>
+                          <button className={styles.dangerBtn} onClick={() => handleDeleteLoyaltyTier(t.id)}>Удалить</button>
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {canApprove && (
+            <div className={styles.formRow} style={{ alignItems: 'flex-end' }}>
+              <div className={styles.formGroup}>
+                <label>От какой по счёту покупки</label>
+                <input type="number" min="1" className={styles.input} value={loyaltyMinPurchases} onChange={e => setLoyaltyMinPurchases(Number(e.target.value))} />
+              </div>
+              <div className={styles.formGroup}>
+                <label>Скидка (%)</label>
+                <input type="number" step="0.1" className={styles.input} value={loyaltyPercent} onChange={e => setLoyaltyPercent(Number(e.target.value))} />
+              </div>
+              <button className={styles.primaryBtn} onClick={handleSaveLoyaltyTier} disabled={loading}>
+                {editingLoyaltyId ? 'Сохранить изменения' : '+ Добавить уровень'}
+              </button>
+              {editingLoyaltyId && (
+                <button className={styles.secondaryBtn} onClick={() => { setEditingLoyaltyId(null); setLoyaltyMinPurchases(2); setLoyaltyPercent(0); }}>Отмена</button>
+              )}
+            </div>
+          )}
+          {!canApprove && loyaltyTiers.length === 0 && (
+            <p style={{ color: '#94a3b8', fontSize: '0.85rem' }}>Уровни ещё не настроены руководителем ОП.</p>
           )}
         </div>
       )}

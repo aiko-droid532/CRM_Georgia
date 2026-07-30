@@ -13,6 +13,7 @@ import { updateDealStatus, updateDealMortgage,
   searchLeads,
   searchUnits } from '@/app/actions/deals';
 import { logCallAttempt, createClient } from '@/app/actions/leads';
+import { getDealGifts, addDealGift, removeDealGift, getAvailableGiftUnits } from '@/app/actions/gifts';
 import LeadModal from '@/components/Leads/LeadModal';
 import { useRouter } from 'next/navigation';
 
@@ -282,6 +283,12 @@ export default function DealsClient({ initialDeals, organizationId, userRole = '
   // Состояния для множественных клиентов и объектов
 const [dealClients, setDealClients] = useState<any[]>([]);
 const [dealUnits, setDealUnits] = useState<any[]>([]);
+const [dealGifts, setDealGifts] = useState<any[]>([]);
+const [showAddGiftModal, setShowAddGiftModal] = useState(false);
+const [giftType, setGiftType] = useState<'DESCRIPTION' | 'UNIT'>('DESCRIPTION');
+const [giftDescription, setGiftDescription] = useState('');
+const [giftUnitId, setGiftUnitId] = useState('');
+const [availableGiftUnits, setAvailableGiftUnits] = useState<any[]>([]);
 const [showAddClientModal, setShowAddClientModal] = useState(false);
 const [showAddUnitModal, setShowAddUnitModal] = useState(false);
 const [showRemoveUnitModal, setShowRemoveUnitModal] = useState<{ id: string; number: string } | null>(null);
@@ -386,8 +393,10 @@ const [customDeleteReason, setCustomDeleteReason] = useState('');
 const loadDealExtras = async (dealId: string) => {
   const clients = await getDealClients(dealId);
   const units = await getDealUnits(dealId);
+  const gifts = await getDealGifts(dealId);
   setDealClients(clients);
   setDealUnits(units);
+  setDealGifts(gifts);
 };
 
 // Обновленный handleCardClick
@@ -876,7 +885,7 @@ const handleSetPrimaryClient = async (leadId: string) => {
                 }
               }}
             >
-              
+
             </button>
           </div>
         </div>
@@ -962,6 +971,58 @@ const handleSetPrimaryClient = async (leadId: string) => {
         </div>
       </div>
     ))}
+  </div>
+
+  {/* Блок Подарки (Этап 2.3) */}
+  <div className={styles.infoSection}>
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+      <h3 style={{ fontWeight: 800, fontSize: '1.25rem', color: '#1e293b', borderBottom: '1px solid #f1f5f9', paddingBottom: '5px', margin: 0 }}>
+         Подарки
+      </h3>
+      {canManage && (
+        <button
+          className={styles.quickCallBtn}
+          onClick={() => setShowAddGiftModal(true)}
+          style={{ fontSize: '1.2rem', padding: '4px 12px' }}
+        >
+          +
+        </button>
+      )}
+    </div>
+    {dealGifts.length === 0 ? (
+      <p style={{ color: '#94a3b8', fontStyle: 'italic' }}>Подарков к сделке не добавлено</p>
+    ) : (
+      dealGifts.map((g: any) => (
+        <div key={g.id} style={{ padding: '12px', border: '1px solid #e2e8f0', borderRadius: '8px', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              {g.giftType === 'UNIT' ? (
+                <>
+                  <strong>{g.unitType === 'Parking' ? 'Паркинг' : 'Кладовая'} №{g.unitNumber}</strong>
+                  <div style={{ fontSize: '0.85rem', color: '#64748b' }}>{g.projectName}, корпус {g.blockNumber} — в подарок</div>
+                </>
+              ) : (
+                <strong>{g.description}</strong>
+              )}
+            </div>
+            {canManage && (
+              <button
+                className={styles.quickCallBtn}
+                style={{ background: '#fee2e2', color: '#ef4444' }}
+                onClick={async () => {
+                  if (!confirm('Удалить подарок?')) return;
+                  const res = await removeDealGift(g.id, organizationId);
+                  if (res.success) setDealGifts(await getDealGifts(selectedDeal.id));
+                  else alert('Ошибка: ' + (res.error || ''));
+                }}
+              >
+                Удалить
+              </button>
+            )}
+          </div>
+        </div>
+      ))
+    )}
   </div>
 
   {/* Блок Ипотека (остается без изменений) */}
@@ -1201,6 +1262,84 @@ const handleSetPrimaryClient = async (leadId: string) => {
         <button className={styles.quickCallBtn} onClick={() => setShowRemoveUnitModal(null)}>Отмена</button>
         <button className={styles.saveMortgageBtn} onClick={handleRemoveUnit}>
           Подтвердить удаление
+        </button>
+      </div>
+    </div>
+  </div>
+)}
+
+{showAddGiftModal && (
+  <div className={styles.overlay} onClick={() => setShowAddGiftModal(false)}>
+    <div className={styles.modal} onClick={e => e.stopPropagation()} style={{ maxWidth: '460px' }}>
+      <header className={styles.modalHeader}>
+        <h2 style={{ fontWeight: 800 }}> Добавить подарок</h2>
+        <button className={styles.closeBtn} onClick={() => setShowAddGiftModal(false)}></button>
+      </header>
+
+      <label style={{ display: 'block', fontWeight: 800, fontSize: '0.8rem', color: '#475569', marginBottom: '5px' }}>Тип подарка</label>
+      <select
+        className={styles.modalInput}
+        value={giftType}
+        onChange={async (e) => {
+          const val = e.target.value as 'DESCRIPTION' | 'UNIT';
+          setGiftType(val);
+          if (val === 'UNIT' && availableGiftUnits.length === 0) {
+            setAvailableGiftUnits(await getAvailableGiftUnits(organizationId));
+          }
+        }}
+        style={{ marginBottom: '12px' }}
+      >
+        <option value="DESCRIPTION">Немонетарный бонус (текстом)</option>
+        <option value="UNIT">Паркинг / Кладовая из каталога</option>
+      </select>
+
+      {giftType === 'DESCRIPTION' ? (
+        <input
+          type="text"
+          className={styles.modalInput}
+          placeholder="Например: Кухонная техника в подарок"
+          value={giftDescription}
+          onChange={e => setGiftDescription(e.target.value)}
+        />
+      ) : (
+        <select className={styles.modalInput} value={giftUnitId} onChange={e => setGiftUnitId(e.target.value)}>
+          <option value="">— Выберите свободный паркинг/кладовую —</option>
+          {availableGiftUnits.map((u: any) => (
+            <option key={u.id} value={u.id}>
+              {u.projectName}, корпус {u.blockNumber} — {u.type === 'Parking' ? 'Паркинг' : 'Кладовая'} №{u.number}
+            </option>
+          ))}
+        </select>
+      )}
+      <p style={{ fontSize: '0.72rem', color: '#94a3b8', marginTop: '6px' }}>
+        Паркинг/кладовая, выданные в подарок, автоматически резервируются и не смогут попасть в другую сделку.
+      </p>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '20px' }}>
+        <button className={styles.quickCallBtn} onClick={() => setShowAddGiftModal(false)}>Отмена</button>
+        <button
+          className={styles.saveMortgageBtn}
+          onClick={async () => {
+            const res = await addDealGift({
+              dealId: selectedDeal.id,
+              giftType,
+              description: giftDescription || undefined,
+              unitId: giftUnitId || undefined,
+              organizationId,
+              initiatorId: managerId,
+            });
+            if (res.success) {
+              setDealGifts(await getDealGifts(selectedDeal.id));
+              setShowAddGiftModal(false);
+              setGiftDescription('');
+              setGiftUnitId('');
+              setGiftType('DESCRIPTION');
+            } else {
+              alert('Ошибка: ' + (res.error || ''));
+            }
+          }}
+        >
+          Добавить
         </button>
       </div>
     </div>

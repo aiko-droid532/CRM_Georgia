@@ -12,6 +12,7 @@ import LeadDossier from '@/components/Leads/LeadDossier';
 import * as XLSX from 'xlsx';
 import UnitLayoutSvg from '@/components/Shakhmatka/UnitLayoutSvg';
 import { getLivePromotionsMap } from '@/app/actions/promotions';
+import { getApplicableCumulativeDiscount } from '@/app/actions/loyalty';
 import { calcPromoPrice, formatEffectSummary, formatGeorgiaDateTime, type PromotionEffectType } from '@/lib/promotionCalculator';
 import {
   calculateInstallmentPlan,
@@ -378,6 +379,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const [calcResult, setCalcResult] = useState<InstallmentResult | null>(null);
   const [calcSaving, setCalcSaving] = useState(false);
   const [calcFullPaymentDate, setCalcFullPaymentDate] = useState('');
+  const [calcCumulativeDiscount, setCalcCumulativeDiscount] = useState<any>(null);
 
   useEffect(() => {
     async function loadUnitDeals() {
@@ -403,6 +405,20 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     loadUnitDeals();
   }, [selectedUnit, organizationId]);
 
+  // Накопительная скидка клиента — зависит от того, какая сделка (какой клиент) выбрана в блоке "Объект"
+  useEffect(() => {
+    async function loadCumulative() {
+      const deal = unitDeals.find((d: any) => d.id === calcDealId);
+      if (deal?.leadId) {
+        const cumulative = await getApplicableCumulativeDiscount(deal.leadId, organizationId);
+        setCalcCumulativeDiscount(cumulative);
+      } else {
+        setCalcCumulativeDiscount(null);
+      }
+    }
+    loadCumulative();
+  }, [calcDealId, unitDeals, organizationId]);
+
   // Дата сдачи: своя у квартиры, иначе — тянем от даты сдачи ЖК
   const calcEffectiveDeliveryDate: string = selectedUnit
     ? (toDateInputValue(selectedUnit.deliveryDate) || (() => {
@@ -424,12 +440,17 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
   const calcLiveFinalPrice: number = selectedUnit
     ? calcFinalPrice(selectedUnit.area, calcUnitEffectivePricePerSqm, calcDiscountApplyType, calcDiscountAmount)
     : 0;
-  // Индивидуальная скидка — пороги согласования по ролям
+  // Накопительная скидка — применяется автоматически поверх итоговой цены
+  const calcCumulativePercent = calcCumulativeDiscount?.discountPercent || 0;
+  const calcFinalPriceWithCumulative = Math.round((calcLiveFinalPrice * (1 - calcCumulativePercent / 100)) * 100) / 100;
+  // Индивидуальная скидка — пороги согласования по ролям.
+  // Порог сверяется по СУММАРНОМУ эффекту: индивидуальная + накопительная
   const calcBasePriceForDiscount = selectedUnit ? calcBasePrice(selectedUnit.area, calcUnitEffectivePricePerSqm) : 0;
   const calcDiscountPercent = calcBasePriceForDiscount > 0
     ? Math.round(((calcBasePriceForDiscount - calcLiveFinalPrice) / calcBasePriceForDiscount) * 1000) / 10
     : 0;
-  const calcDiscountAllowed = canApplyDiscountPercent(role, calcDiscountPercent);
+  const calcCombinedDiscountPercent = Math.round((calcDiscountPercent + calcCumulativePercent) * 10) / 10;
+  const calcDiscountAllowed = canApplyDiscountPercent(role, calcCombinedDiscountPercent);
   const calcAutoDates = computeAutoScheduleDates(calcFirstPaymentDate, calcEffectiveDeliveryDate);
   const calcMonthsCount = Math.max(1, calcPeriodsCount(calcAutoDates.scheduleStartDate, calcAutoDates.scheduleEndDate, calcPeriodicity));
 
@@ -548,6 +569,14 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
     }
     setCalcSaving(true);
     try {
+      const cumulativeReduction = Math.round(calcResult.finalPriceUSD * (calcCumulativePercent / 100) * 100) / 100;
+      const adjustedFinalPriceUSD = Math.round((calcResult.finalPriceUSD - cumulativeReduction) * 100) / 100;
+      const adjustedLastPaymentAmount = Math.round((derivedLastAmount - cumulativeReduction) * 100) / 100;
+      const adjustedSchedule = calcResult.schedule.map((r, i) =>
+        i === calcResult.schedule.length - 1
+          ? { date: r.date, amountUSD: Math.round((r.amountUSD - cumulativeReduction) * 100) / 100, amountGEL: Math.round((r.amountUSD - cumulativeReduction) * calcNbgRate * 100) / 100 }
+          : { date: r.date, amountUSD: r.amountUSD, amountGEL: r.amountGEL }
+      );
       const res = await saveInstallmentPlanAction({
         dealId: calcDealId,
         scheduleType: calcScheduleType,
@@ -555,7 +584,7 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
         basePriceUSD: calcResult.basePriceUSD,
         discountApplyType: calcDiscountApplyType,
         discountAmountUSD: calcResult.discountTotalUSD,
-        finalPriceUSD: calcResult.finalPriceUSD,
+        finalPriceUSD: adjustedFinalPriceUSD,
         nbgRate: calcNbgRate,
         firstPaymentDate: calcFirstPaymentDate,
         firstPaymentPercent: calcFirstPercent,
@@ -563,11 +592,11 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
         scheduleEndDate: calcResult.scheduleEndDate,
         recurringAmountUSD: derivedRecurringAmount,
         lastPaymentDate: calcResult.lastPaymentDate,
-        lastPaymentAmountUSD: derivedLastAmount,
+        lastPaymentAmountUSD: adjustedLastPaymentAmount,
         lastPaymentPercent: calcLastPercent,
         installmentComment: calcComment,
         customScheduleFileUrl: calcCustomFileUrl,
-        schedule: calcResult.schedule.map(r => ({ date: r.date, amountUSD: r.amountUSD, amountGEL: r.amountGEL })),
+        schedule: adjustedSchedule,
         organizationId,
         initiatorId: managerId,
       });
@@ -2022,16 +2051,21 @@ export default function ShakhmatkaClient({ projects: initialProjects, leads, org
                           <div style={{ marginTop: '10px', fontSize: '0.8rem', color: '#475569' }}>
                             Итоговая цена (с учётом скидки): <strong>${calcLiveFinalPrice.toLocaleString()}</strong>
                           </div>
-                          {calcDiscountPercent > 0 && (
+                          {calcCumulativeDiscount && (
+                            <div style={{ marginTop: '8px', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 600, background: '#eff6ff', color: '#1e40af', border: '1px solid #bfdbfe' }}>
+                               Накопительная скидка клиента: {calcCumulativePercent}% (покупок ранее: {calcCumulativeDiscount.purchaseCount}) — применяется автоматически
+                            </div>
+                          )}
+                          {calcCombinedDiscountPercent > 0 && (
                             <div style={{
-                              marginTop: '10px', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 600,
+                              marginTop: '8px', padding: '8px 12px', borderRadius: '8px', fontSize: '0.78rem', fontWeight: 600,
                               background: calcDiscountAllowed ? '#f0fdf4' : '#fef2f2',
                               color: calcDiscountAllowed ? '#166534' : '#dc2626',
                               border: `1px solid ${calcDiscountAllowed ? '#bbf7d0' : '#fecaca'}`
                             }}>
-                              Скидка {calcDiscountPercent}%{calcDiscountAllowed
+                              Суммарная скидка {calcCombinedDiscountPercent}% (индивидуальная {calcDiscountPercent}% + накопительная {calcCumulativePercent}%){calcDiscountAllowed
                                 ? ' — в пределах вашего порога согласования.'
-                                : ` — превышает ваш порог (до ${getMaxDiscountPercent(role)}%). Требуется согласование: ${getRequiredApproverLabel(calcDiscountPercent)}.`}
+                                : ` — превышает ваш порог (до ${getMaxDiscountPercent(role)}%). Требуется согласование: ${getRequiredApproverLabel(calcCombinedDiscountPercent)}.`}
                             </div>
                           )}
                         </div>
