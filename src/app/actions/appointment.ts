@@ -6,13 +6,13 @@ import { revalidatePath } from 'next/cache';
 // Получить занятые слоты для менеджера на определенную дату
 export async function getBusySlots(managerId: string, date: string) {
   try {
-    const appointments = await prisma.$queryRaw<{ appointmentTime: string }[]>`
+    const appointments = await prisma.$queryRaw<any>`
       SELECT "appointmentTime" FROM "Lead"
       WHERE "appointmentManagerId" = ${managerId}
         AND "appointmentDate" = ${date}::date
         AND "appointmentStatus" = 'SCHEDULED'
     `;
-    return appointments.map(a => a.appointmentTime);
+    return appointments.map((a: any) => a.appointmentTime);
   } catch (error) {
     console.error('getBusySlots error:', error);
     return [];
@@ -29,8 +29,8 @@ export async function scheduleAppointment(
 ) {
   try {
     // Проверяем, не занят ли слот
-    const busy = await prisma.$queryRaw<{ count: number }[]>`
-      SELECT COUNT(*) FROM "Lead"
+    const busy = await prisma.$queryRaw<any>`
+      SELECT COUNT(*) as count FROM "Lead"
       WHERE "appointmentManagerId" = ${managerId}
         AND "appointmentDate" = ${date}::date
         AND "appointmentTime" = ${time}::time

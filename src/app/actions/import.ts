@@ -104,7 +104,7 @@ export async function importUnitsFromExcel(
         // 1. Находим или создаем Project
         let projectId = projects.get(projectName);
         if (!projectId) {
-          const existingProject = await prisma.$queryRaw<{ id: string }[]>`
+          const existingProject = await prisma.$queryRaw<any>`
  SELECT id FROM "Project" 
  WHERE name = ${projectName} AND "organizationId" = ${organizationId}
  LIMIT 1
@@ -121,7 +121,7 @@ export async function importUnitsFromExcel(
               .substring(0, 50);
             const address = row.address || row["address"] || row["Адрес"] || "";
 
-            const newProject = await prisma.$queryRaw<{ id: string }[]>`
+            const newProject = await prisma.$queryRaw<any>`
  INSERT INTO "Project" (
  id, name, code, address, 
  "nameKa", "nameRu", "nameEn",
@@ -151,7 +151,7 @@ export async function importUnitsFromExcel(
         const blockKey = `${projectName}_${blockNumber}`;
         let blockId = blocks.get(blockKey);
         if (!blockId) {
-          const existingBlock = await prisma.$queryRaw<{ id: string }[]>`
+          const existingBlock = await prisma.$queryRaw<any>`
  SELECT id FROM "Block" 
  WHERE number = ${blockNumber} AND "projectId" = ${projectId}
  LIMIT 1
@@ -168,7 +168,7 @@ export async function importUnitsFromExcel(
               .replace(/[^a-z0-9]/g, "_")
               .substring(0, 50);
 
-            const newBlock = await prisma.$queryRaw<{ id: string }[]>`
+            const newBlock = await prisma.$queryRaw<any>`
  INSERT INTO "Block" (
  id, number, code, "projectId", "organizationId", 
  "floorCount", "constructionStage", "createdAt", "updatedAt"
@@ -193,9 +193,7 @@ export async function importUnitsFromExcel(
         }
 
         // 3. Проверяем, существует ли уже квартира
-        const existingUnit = await prisma.$queryRaw<
-          { id: string; price: number }[]
-        >`
+        const existingUnit = await prisma.$queryRaw<any>`
  SELECT id, price FROM "Unit" 
  WHERE number = ${number.toString()} AND "blockId" = ${blockId}
  LIMIT 1

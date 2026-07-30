@@ -1,6 +1,6 @@
 'use server';
 
-import { db as prisma } from '@/lib/db';
+import { db as prisma, Prisma } from '@/lib/db';
 import { revalidatePath, unstable_noStore as noStore } from 'next/cache';
 import { logAction } from '@/lib/logger';
 import { requireRole, canManageUnits, canManagePrices } from '@/lib/roles';
@@ -357,13 +357,7 @@ export async function updateUnit(data: {
     await requireRole(canManageUnits, 'редактирование квартиры');
     logAction('Обновление характеристик квартиры', { unitId: data.unitId, reason: data.reason });
     // Получаем старые данные
-    const oldUnit = await prisma.$queryRaw<{
-      number: string; floor: number; area: number; rooms: number;
-      price: number; type: string; viewType: string; livingArea: number; status: string;
-      layoutUrl: string; layout3dUrl: string;
-      balconyArea: number; contractNumber: string; deliveryYear: number; deliveryMonth: number; deliveryDate: string;
-      registeredInPublicRegistry: boolean; availableForSale: boolean; pricePerSqmVAT: number;
-    }[]>`
+    const oldUnit: any[] = await prisma.$queryRaw`
       SELECT number, floor, area, rooms, price, type, "viewType", "livingArea", status, "layoutUrl", "layout3dUrl",
         "balconyArea", "contractNumber", "deliveryYear", "deliveryMonth", "deliveryDate",
         "registeredInPublicRegistry", "availableForSale", "pricePerSqmVAT"
@@ -375,7 +369,7 @@ export async function updateUnit(data: {
     }
     
     const old = oldUnit[0];
-    const updates: string[] = [];
+    const updates: any[] = [];
     const changes: string[] = [];
     
     // Собираем изменения
@@ -867,5 +861,21 @@ export async function getUnitForCalculator(unitId: string, organizationId: strin
   } catch (error) {
     console.error('getUnitForCalculator error:', error);
     return null;
+  }
+}
+
+// Получить детальный разбор комнат для квартиры (экспликация)
+export async function getUnitRooms(unitId: string) {
+  try {
+    const rooms: any[] = await prisma.$queryRaw`
+      SELECT id, "roomType", "nameRu", area
+      FROM "UnitRoom"
+      WHERE "unitId" = ${unitId}
+      ORDER BY "area" DESC
+    `;
+    return rooms;
+  } catch (error) {
+    console.error('getUnitRooms error:', error);
+    return [];
   }
 }

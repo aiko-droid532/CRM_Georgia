@@ -13,7 +13,7 @@ export async function getExchangeRate(date?: Date): Promise<number> {
     const todayStr = targetDate.toISOString().split('T')[0];
     
     // 1. Сначала пробуем получить из базы на конкретную дату
-    const cached = await prisma.$queryRaw<{ rate: number; date: Date; isFallback: boolean }[]>`
+    const cached = await prisma.$queryRaw<any>`
       SELECT rate, date, "isFallback" FROM "ExchangeRate" 
       WHERE currency = 'USD' AND date = ${todayStr}::date
       LIMIT 1
@@ -111,7 +111,7 @@ async function fetchRateFromAPI(): Promise<number> {
 
 async function getLastKnownRate(): Promise<number | null> {
   try {
-    const result = await prisma.$queryRaw<{ rate: number }[]>`
+    const result = await prisma.$queryRaw<any>`
       SELECT rate FROM "ExchangeRate" 
       WHERE currency = 'USD' 
       ORDER BY date DESC 
@@ -136,7 +136,7 @@ export async function updateExchangeRates() {
     const todayStr = today.toISOString().split('T')[0];
     
     // Проверяем, есть ли уже курс на сегодня
-    const exists = await prisma.$queryRaw<{ exists: boolean }[]>`
+    const exists = await prisma.$queryRaw<any>`
       SELECT EXISTS(SELECT 1 FROM "ExchangeRate" WHERE currency = 'USD' AND date = ${todayStr}::date) as exists
     `;
     
@@ -165,7 +165,7 @@ export async function updateExchangeRates() {
 export async function getHistoricalExchangeRate(date: Date): Promise<number> {
   const dateStr = date.toISOString().split('T')[0];
   
-  const result = await prisma.$queryRaw<{ rate: number }[]>`
+  const result = await prisma.$queryRaw<any>`
     SELECT rate FROM "ExchangeRate" 
     WHERE currency = 'USD' AND date <= ${dateStr}::date
     ORDER BY date DESC 
